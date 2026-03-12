@@ -1,0 +1,21 @@
+{
+  "apis": [
+    {
+      "name": "API Exemplo",
+      "url": "https://jsonplaceholder.typicode.com/posts/1",
+      "method": "GET",
+      "timeout": 5,
+      "expected_status": 200
+    },
+    {
+      "name": "API GitHub",
+      "url": "https://api.github.com",
+      "method": "GET",
+      "timeout": 5,
+      "expected_status": 200
+    }
+  ],
+  "check_interval": 300,
+  "webhook_url": "",
+  "log_file": "monitor.log"
+}
