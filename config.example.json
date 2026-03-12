@@ -1,4 +1,26 @@
 {
+  "check_interval": 300,
+  "log_file": "monitor.log",
+  "log_level": "INFO",
+  "history_db": "uptime.db",
+  "webhook_cooldown": 300,
+  
+  "webhooks": [
+    {
+      "type": "discord",
+      "url": "https://discord.com/api/webhooks/SEU_WEBHOOK"
+    },
+    {
+      "type": "slack",
+      "url": "https://hooks.slack.com/services/SEU/WEBHOOK/URL"
+    },
+    {
+      "type": "telegram",
+      "url": "https://api.telegram.org/botSEU_BOT_TOKEN",
+      "chat_id": "SEU_CHAT_ID"
+    }
+  ],
+  
   "apis": [
     {
       "name": "API Exemplo",
@@ -13,9 +35,13 @@
       "method": "GET",
       "timeout": 5,
       "expected_status": 200
+    },
+    {
+      "name": "Mengão Monitor Health",
+      "url": "http://localhost:8080/health",
+      "method": "GET",
+      "timeout": 3,
+      "expected_status": 200
     }
-  ],
-  "check_interval": 300,
-  "webhook_url": "",
-  "log_file": "monitor.log"
+  ]
 }

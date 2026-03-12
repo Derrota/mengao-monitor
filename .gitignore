@@ -4,6 +4,9 @@ config.json
 # Logs
 *.log
 
+# Banco de dados
+*.db
+
 # Python
 __pycache__/
 *.py[cod]
