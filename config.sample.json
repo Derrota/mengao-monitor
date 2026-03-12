@@ -1,0 +1,57 @@
+{
+  "endpoints": [
+    {
+      "name": "API Principal",
+      "url": "https://api.exemplo.com/health",
+      "method": "GET",
+      "timeout": 10,
+      "expected_status": 200,
+      "interval": 60,
+      "tags": [
+        "produção",
+        "api"
+      ]
+    },
+    {
+      "name": "Site Flamengo",
+      "url": "https://www.flamengo.com.br",
+      "method": "GET",
+      "timeout": 15,
+      "expected_status": 200,
+      "interval": 120,
+      "tags": [
+        "flamengo",
+        "site"
+      ]
+    }
+  ],
+  "webhooks": [
+    {
+      "platform": "discord",
+      "url": "https://discord.com/api/webhooks/...",
+      "enabled": true,
+      "events": [
+        "down",
+        "up"
+      ],
+      "cooldown": 300
+    }
+  ],
+  "dashboard": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 8080,
+    "refresh_interval": 30,
+    "theme": "dark",
+    "title": "Mengão Monitor"
+  },
+  "history": {
+    "enabled": true,
+    "db_path": "uptime_history.db",
+    "retention_days": 90
+  },
+  "log_level": "INFO",
+  "log_format": "json",
+  "metrics_enabled": true,
+  "metrics_port": 9090
+}
