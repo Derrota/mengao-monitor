@@ -1,13 +1,6 @@
-#!/usr/bin/env python3
 """
-Mengão Monitor v1.3 🦞
-Monitor de APIs simples, eficiente e rubro-negro.
-
-Novidades v1.3:
-- Configuração YAML/JSON com validação
-- Logging estruturado (JSON para produção)
-- Métricas Prometheus nativas
-- CLI melhorado
+Mengão Monitor - Main Entry Point
+Orchestrates all components: config, logging, metrics, webhooks, history.
 """
 
 import argparse
@@ -21,7 +14,7 @@ from typing import Optional
 
 import requests
 
-from config import MonitorConfig, load_config, create_sample_config, parse_config
+from config import MonitorConfig, load_config, create_sample_config
 from logger import setup_logging, get_logger, get_api_logger, get_webhook_logger, LogContext
 from metrics import PrometheusMetrics, start_metrics_server
 from webhooks import WebhookSender
@@ -29,7 +22,7 @@ from history import UptimeHistory
 
 
 class MengaoMonitor:
-    """Main monitor class using new architecture."""
+    """Main monitor class."""
 
     def __init__(self, config: MonitorConfig):
         self.config = config
@@ -284,15 +277,6 @@ def create_default_config(path: str = "config.json") -> None:
                 "expected_status": 200,
                 "interval": 120,
                 "tags": ["flamengo", "site"]
-            },
-            {
-                "name": "Flamengo API",
-                "url": "https://api.flamengo.com.br/health",
-                "method": "GET",
-                "timeout": 10,
-                "expected_status": 200,
-                "interval": 60,
-                "tags": ["flamengo", "api"]
             }
         ],
         "webhooks": [],
@@ -333,47 +317,13 @@ Examples:
         """,
     )
     
-    parser.add_argument(
-        "-c", "--config",
-        default="config.json",
-        help="Config file path (JSON or YAML)",
-    )
-    
-    parser.add_argument(
-        "--check",
-        action="store_true",
-        help="Run single check cycle and exit",
-    )
-    
-    parser.add_argument(
-        "--stats",
-        action="store_true",
-        help="Show statistics and exit",
-    )
-    
-    parser.add_argument(
-        "--init",
-        action="store_true",
-        help="Create default config.json",
-    )
-    
-    parser.add_argument(
-        "--sample",
-        action="store_true",
-        help="Create sample config with all options",
-    )
-    
-    parser.add_argument(
-        "--log-level",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        help="Override log level",
-    )
-    
-    parser.add_argument(
-        "--log-format",
-        choices=["json", "text"],
-        help="Override log format",
-    )
+    parser.add_argument("-c", "--config", default="config.json", help="Config file path (JSON or YAML)")
+    parser.add_argument("--check", action="store_true", help="Run single check cycle and exit")
+    parser.add_argument("--stats", action="store_true", help="Show statistics and exit")
+    parser.add_argument("--init", action="store_true", help="Create default config.json")
+    parser.add_argument("--sample", action="store_true", help="Create sample config with all options")
+    parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], help="Override log level")
+    parser.add_argument("--log-format", choices=["json", "text"], help="Override log format")
     
     args = parser.parse_args()
     
@@ -407,10 +357,7 @@ Examples:
         config.log_format = args.log_format
     
     # Setup logging
-    setup_logging(
-        level=config.log_level,
-        format_type=config.log_format,
-    )
+    setup_logging(level=config.log_level, format_type=config.log_format)
     
     # Create monitor
     monitor = MengaoMonitor(config)
