@@ -8,13 +8,33 @@ import json
 import time
 import logging
 import requests
+import argparse
 from datetime import datetime
 from typing import Dict, List, Optional
 
+from health import update_state, start_health_server
+
+
 class APIMonitor:
-    def __init__(self, config_file: str = "config.json"):
+    def __init__(self, config_file: str = "config.json", enable_health: bool = False, health_port: int = 8080):
         self.config = self.load_config(config_file)
         self.setup_logging()
+        self.state = {
+            'started_at': datetime.now(),
+            'last_check': None,
+            'checks_count': 0,
+            'apis_monitored': len(self.config.get('apis', [])),
+            'errors_count': 0
+        }
+        
+        # Inicia health check server se habilitado
+        if enable_health:
+            self.logger.info(f"🏥 Health check habilitado na porta {health_port}")
+            start_health_server(health_port)
+            update_state(
+                started_at=self.state['started_at'],
+                apis_monitored=self.state['apis_monitored']
+            )
         
     def load_config(self, config_file: str) -> Dict:
         """Carrega configuração do arquivo JSON."""
@@ -141,13 +161,61 @@ class APIMonitor:
         while True:
             self.logger.info("🔍 Iniciando verificação...")
             
+            errors_in_check = 0
             for api_config in self.config['apis']:
                 result = self.check_api(api_config)
                 self.send_webhook(result)
+                
+                if result['status'] != 'online':
+                    errors_in_check += 1
+            
+            # Atualiza estado
+            self.state['checks_count'] += 1
+            self.state['last_check'] = datetime.now().isoformat()
+            self.state['errors_count'] += errors_in_check
+            
+            # Sincroniza com health server
+            update_state(
+                last_check=self.state['last_check'],
+                checks_count=self.state['checks_count'],
+                errors_count=self.state['errors_count']
+            )
             
             self.logger.info(f"💤 Próxima verificação em {self.config['check_interval']}s")
             time.sleep(self.config['check_interval'])
 
-if __name__ == "__main__":
-    monitor = APIMonitor()
+
+def main():
+    """Entry point com argumentos de linha de comando."""
+    parser = argparse.ArgumentParser(
+        description='🦞 Mengão Monitor - Monitor de APIs simples e eficiente'
+    )
+    parser.add_argument(
+        '-c', '--config',
+        default='config.json',
+        help='Arquivo de configuração (default: config.json)'
+    )
+    parser.add_argument(
+        '--health',
+        action='store_true',
+        help='Habilita health check endpoint'
+    )
+    parser.add_argument(
+        '--health-port',
+        type=int,
+        default=8080,
+        help='Porta do health check (default: 8080)'
+    )
+    
+    args = parser.parse_args()
+    
+    monitor = APIMonitor(
+        config_file=args.config,
+        enable_health=args.health,
+        health_port=args.health_port
+    )
     monitor.run()
+
+
+if __name__ == "__main__":
+    main()
