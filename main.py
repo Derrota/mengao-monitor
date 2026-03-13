@@ -19,6 +19,7 @@ from logger import setup_logging, get_logger, get_api_logger, get_webhook_logger
 from metrics import PrometheusMetrics, start_metrics_server
 from webhooks import WebhookSender
 from history import UptimeHistory
+from email_alerts import EmailAlertSender
 
 
 class MengaoMonitor:
@@ -46,6 +47,9 @@ class MengaoMonitor:
         self.history: Optional[UptimeHistory] = None
         if config.history.enabled:
             self.history = UptimeHistory(config.history.db_path)
+        
+        # Email alerts
+        self.email_sender = EmailAlertSender(config.email)
         
         # State
         self.running = False
@@ -142,6 +146,12 @@ class MengaoMonitor:
             self.webhook_logger.sent("configured", event, endpoint_name)
         except Exception as e:
             self.webhook_logger.failed("configured", event, str(e))
+        
+        # Send email alert
+        if self.config.email.enabled:
+            email_sent = self.email_sender.send(result, event, self.logger)
+            if email_sent:
+                self.logger.info(f"Email alert sent for {endpoint_name} ({event})")
 
     def run_check_cycle(self) -> None:
         """Run one check cycle for all endpoints."""
@@ -194,6 +204,7 @@ class MengaoMonitor:
         self.logger.info("=" * 60)
         self.logger.info(f"Endpoints: {len([e for e in self.config.endpoints if e.enabled])}")
         self.logger.info(f"Webhooks: {len([w for w in self.config.webhooks if w.enabled])}")
+        self.logger.info(f"Email: {'enabled' if self.config.email.enabled else 'disabled'}")
         self.logger.info(f"Dashboard: {'enabled' if self.config.dashboard.enabled else 'disabled'}")
         self.logger.info(f"History: {'enabled' if self.config.history.enabled else 'disabled'}")
         self.logger.info(f"Metrics: {'enabled' if self.config.metrics_enabled else 'disabled'}")

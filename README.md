@@ -12,6 +12,7 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 
 - **Monitoramento multi-endpoint** - Monitore várias APIs simultaneamente
 - **Webhooks multi-plataforma** - Alertas via Discord, Slack, Telegram
+- **Alertas por email** - Notificações SMTP com HTML templates
 - **Dashboard web** - Interface visual com tema rubro-negro
 - **Métricas Prometheus** - Exportação padrão para integração
 - **Histórico SQLite** - Tracking de uptime com estatísticas
@@ -122,6 +123,18 @@ python main.py --log-level DEBUG --log-format text
       "events": ["down", "up"]
     }
   ],
+  "email": {
+    "enabled": true,
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "use_tls": true,
+    "username": "alertas@exemplo.com",
+    "password": "sua-senha-app",
+    "from_addr": "alertas@exemplo.com",
+    "to_addrs": ["admin@exemplo.com", "dev@exemplo.com"],
+    "events": ["down", "up"],
+    "cooldown": 300
+  },
   "dashboard": {
     "enabled": true,
     "host": "0.0.0.0",
@@ -140,7 +153,7 @@ python main.py --log-level DEBUG --log-format text
   "log_format": "json",
   "metrics_enabled": true,
   "metrics_port": 9090,
-  "user_agent": "MengaoMonitor/1.3"
+  "user_agent": "MengaoMonitor/1.4"
 }
 ```
 
@@ -215,7 +228,7 @@ mengao-monitor/
 
 ## 🗺️ Roadmap
 
-- [ ] **v1.4**: Alertas por email (SMTP)
+- [x] **v1.4**: Alertas por email (SMTP) ✅
 - [ ] **v1.5**: Autenticação no dashboard
 - [ ] **v1.6**: Multi-region checks
 - [ ] **v1.7**: SLA reporting automático
