@@ -116,8 +116,8 @@ log_level: INFO
                 "smtp_port": 587,
                 "username": "test@test.com",
                 "password": "secret",
-                "from_addr": "test@test.com",
-                "to_addrs": ["admin@test.com"]
+                "from_email": "test@test.com",
+                "to_emails": ["admin@test.com"]
             }
         }
         config_file.write_text(json.dumps(config_data))
@@ -267,14 +267,14 @@ class TestWebhookSender:
             'timestamp': datetime.now().isoformat()
         }
         
-        with patch('requests.post') as mock_post:
+        with patch('requests.post') as mock_request:
             sender.send(result)
-            mock_post.assert_not_called()
+            mock_request.assert_not_called()
 
-    @patch('requests.post')
-    def test_send_alert_offline(self, mock_post):
+    @patch('requests.request')
+    def test_send_alert_offline(self, mock_request):
         """Testa envio de alerta para API offline."""
-        mock_post.return_value.status_code = 200
+        mock_request.return_value.status_code = 200
         
         from webhooks import WebhookSender
         
@@ -292,7 +292,7 @@ class TestWebhookSender:
         
         sender.send(result)
         
-        assert mock_post.call_count == 1
+        assert mock_request.call_count == 1
         # Cooldown deve ser atualizado
         assert 'Test API' in sender.cooldowns
 
@@ -304,17 +304,17 @@ class TestEmailAlerts:
 
     def test_email_config_validation(self):
         """Testa validação de config de email."""
-        from email_alerts import EmailAlerter
+        from email_alerts import EmailAlertSender
         from config import EmailConfig
         
         # Config desabilitado
         config = EmailConfig(enabled=False)
-        alerter = EmailAlerter(config)
+        alerter = EmailAlertSender(config)
         assert alerter.enabled is False
 
     def test_html_template_rendering(self):
         """Testa renderização de template HTML."""
-        from email_alerts import EmailAlerter
+        from email_alerts import EmailAlertSender
         from config import EmailConfig
         
         config = EmailConfig(
@@ -322,11 +322,11 @@ class TestEmailAlerts:
             smtp_host="smtp.test.com",
             username="test@test.com",
             password="secret",
-            from_addr="test@test.com",
+            from_email="test@test.com",
             to_emails=["admin@test.com"]
         )
         
-        alerter = EmailAlerter(config)
+        alerter = EmailAlertSender(config)
         
         # Testa template de alerta
         html = alerter._render_alert_html(
@@ -342,7 +342,7 @@ class TestEmailAlerts:
 
     def test_recovery_template(self):
         """Testa template de recuperação."""
-        from email_alerts import EmailAlerter
+        from email_alerts import EmailAlertSender
         from config import EmailConfig
         
         config = EmailConfig(
@@ -350,11 +350,11 @@ class TestEmailAlerts:
             smtp_host="smtp.test.com",
             username="test@test.com",
             password="secret",
-            from_addr="test@test.com",
+            from_email="test@test.com",
             to_emails=["admin@test.com"]
         )
         
-        alerter = EmailAlerter(config)
+        alerter = EmailAlertSender(config)
         
         html = alerter._render_recovery_html(
             api_name="Test API",
@@ -530,8 +530,8 @@ class TestMonitorIntegration:
                 "use_tls": True,
                 "username": "",
                 "password": "",
-                "from_addr": "",
-                "to_addrs": []
+                "from_email": "",
+                "to_emails": []
             },
             "dashboard": {
                 "enabled": True,

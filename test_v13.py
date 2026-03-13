@@ -335,10 +335,10 @@ class TestWebhookSender:
         assert payload['chat_id'] == '123456'
         assert 'parse_mode' in payload
 
-    @patch('webhooks.requests.post')
-    def test_send_without_cooldown(self, mock_post):
+    @patch('webhooks.requests.request')
+    def test_send_without_cooldown(self, mock_request):
         """Testa envio sem cooldown."""
-        mock_post.return_value.status_code = 200
+        mock_request.return_value.status_code = 200
         
         webhooks = [{"type": "discord", "url": "https://discord.com/test"}]
         sender = WebhookSender(webhooks)
@@ -354,11 +354,11 @@ class TestWebhookSender:
         
         # Primeiro envio
         sender.send(result, MagicMock())
-        assert mock_post.call_count == 1
+        assert mock_request.call_count == 1
         
         # Segundo envio (sem cooldown, deve enviar)
         sender.send(result, MagicMock())
-        assert mock_post.call_count == 2
+        assert mock_request.call_count == 2
 
 
 # ============================================================

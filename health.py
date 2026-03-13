@@ -2,6 +2,7 @@
 Health Check + Dashboard v2 para Mengão Monitor 🦞
 System metrics, API status, webhook stats, and dashboard with Chart.js.
 v2.1: Token-based authentication
+v2.3: Middleware (CORS, rate limiting, request logging)
 """
 
 from flask import Flask, jsonify, Response, request
@@ -11,8 +12,29 @@ from datetime import datetime
 from dashboard_v2 import render_dashboard_v2
 from system_metrics import SystemMetricsCollector
 from auth import auth_manager, require_auth, optional_auth, AuthToken
+from middleware import setup_middleware
 
 app = Flask(__name__)
+system_collector = SystemMetricsCollector()
+
+# Configura middleware (CORS, rate limiting, logging)
+MIDDLEWARE_CONFIG = {
+    'rate_limit': {
+        'requests_per_minute': 60,
+        'requests_per_hour': 1000,
+        'burst_limit': 10,
+        'burst_window': 10
+    },
+    'cors': {
+        'allowed_origins': ['*'],
+        'allowed_methods': ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        'allowed_headers': ['Content-Type', 'Authorization', 'X-Requested-With'],
+        'max_age': 86400,
+        'allow_credentials': False
+    }
+}
+
+app = setup_middleware(app, MIDDLEWARE_CONFIG)
 system_collector = SystemMetricsCollector()
 
 # Estado global do monitor (será injetado)
