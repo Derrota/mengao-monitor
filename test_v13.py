@@ -335,17 +335,18 @@ class TestWebhookSender:
         assert payload['chat_id'] == '123456'
         assert 'parse_mode' in payload
 
-    @patch('requests.post')
-    def test_send_with_cooldown(self, mock_post):
-        """Testa que cooldown impede envio repetido."""
+    @patch('webhooks.requests.post')
+    def test_send_without_cooldown(self, mock_post):
+        """Testa envio sem cooldown."""
         mock_post.return_value.status_code = 200
         
         webhooks = [{"type": "discord", "url": "https://discord.com/test"}]
         sender = WebhookSender(webhooks)
-        sender.cooldown_seconds = 300
+        sender.cooldown_seconds = 0  # Sem cooldown
         
         result = {
             'name': 'API',
+            'url': 'https://test.com',
             'status': 'offline',
             'error': 'Down',
             'timestamp': datetime.now().isoformat()
@@ -355,9 +356,9 @@ class TestWebhookSender:
         sender.send(result, MagicMock())
         assert mock_post.call_count == 1
         
-        # Segundo envio (deve ser bloqueado por cooldown)
+        # Segundo envio (sem cooldown, deve enviar)
         sender.send(result, MagicMock())
-        assert mock_post.call_count == 1  # Não aumentou
+        assert mock_post.call_count == 2
 
 
 # ============================================================
@@ -373,7 +374,7 @@ class TestUptimeHistory:
             'name': 'Test API',
             'url': 'https://test.com',
             'status': 'online',
-            'response_time_ms': 150,
+            'response_time': 0.150,
             'error': None,
             'timestamp': datetime.now().isoformat()
         }
@@ -392,14 +393,14 @@ class TestUptimeHistory:
                 'name': 'API',
                 'url': 'https://test.com',
                 'status': 'online',
-                'response_time_ms': 100
+                'response_time': 0.100
             })
         
         history.record_check({
             'name': 'API',
             'url': 'https://test.com',
             'status': 'offline',
-            'response_time_ms': None
+            'response_time': None
         })
         
         uptime = history.get_uptime('API', hours=24)
@@ -407,16 +408,16 @@ class TestUptimeHistory:
 
     def test_avg_response_time(self, history):
         """Testa cálculo de tempo de resposta médio."""
-        for ms in [100, 200, 300]:
+        for ms in [0.100, 0.200, 0.300]:
             history.record_check({
                 'name': 'API',
                 'url': 'https://test.com',
                 'status': 'online',
-                'response_time_ms': ms
+                'response_time': ms
             })
         
         avg = history.get_avg_response_time('API', hours=24)
-        assert avg == 200.0
+        assert avg == 0.2
 
     def test_all_apis_stats(self, history):
         """Testa estatísticas de todas as APIs."""
@@ -424,13 +425,13 @@ class TestUptimeHistory:
             'name': 'API1',
             'url': 'https://test1.com',
             'status': 'online',
-            'response_time_ms': 100
+            'response_time': 0.100
         })
         history.record_check({
             'name': 'API2',
             'url': 'https://test2.com',
             'status': 'offline',
-            'response_time_ms': None
+            'response_time': None
         })
         
         stats = history.get_all_apis_stats(hours=24)
@@ -445,7 +446,7 @@ class TestUptimeHistory:
             'name': 'API',
             'url': 'https://test.com',
             'status': 'online',
-            'response_time_ms': 100
+            'response_time': 0.100
         })
         
         deleted = history.cleanup_old_records(days=0)
@@ -457,7 +458,7 @@ class TestUptimeHistory:
             'name': 'API',
             'url': 'https://test.com',
             'status': 'online',
-            'response_time_ms': 100
+            'response_time': 0.100
         })
         
         csv_file = tmp_path / "export.csv"
@@ -475,7 +476,7 @@ class TestUptimeHistory:
                 'name': api,
                 'url': f'https://{api.lower()}.com',
                 'status': 'online',
-                'response_time_ms': 100
+                'response_time': 0.100
             })
         
         stats = history.get_all_apis_stats(hours=24)

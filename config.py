@@ -106,12 +106,37 @@ class HistoryConfig:
 
 
 @dataclass
+class EmailConfig:
+    """Configuration for email alerts."""
+    enabled: bool = False
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    username: str = ""
+    password: str = ""
+    from_email: str = ""
+    to_emails: List[str] = field(default_factory=list)
+    use_tls: bool = True
+
+    def validate(self) -> List[str]:
+        errors = []
+        if self.enabled:
+            if not self.username:
+                errors.append("Email username is required")
+            if not self.password:
+                errors.append("Email password is required")
+            if not self.to_emails:
+                errors.append("At least one recipient email is required")
+        return errors
+
+
+@dataclass
 class MonitorConfig:
     """Main configuration for Mengão Monitor."""
     endpoints: List[APIEndpoint] = field(default_factory=list)
     webhooks: List[WebhookConfig] = field(default_factory=list)
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     history: HistoryConfig = field(default_factory=HistoryConfig)
+    email: EmailConfig = field(default_factory=EmailConfig)
     
     # Global settings
     log_level: str = "INFO"
@@ -192,6 +217,20 @@ def _parse_dashboard(data: Dict[str, Any]) -> DashboardConfig:
     )
 
 
+def _parse_email(data: Dict[str, Any]) -> EmailConfig:
+    """Parse email config from dict."""
+    return EmailConfig(
+        enabled=data.get("enabled", False),
+        smtp_host=data.get("smtp_host", "smtp.gmail.com"),
+        smtp_port=data.get("smtp_port", 587),
+        username=data.get("username", ""),
+        password=data.get("password", ""),
+        from_email=data.get("from_email", ""),
+        to_emails=data.get("to_emails", []),
+        use_tls=data.get("use_tls", True),
+    )
+
+
 def _parse_history(data: Dict[str, Any]) -> HistoryConfig:
     """Parse history config from dict."""
     return HistoryConfig(
@@ -250,6 +289,7 @@ def parse_config(data: Dict[str, Any]) -> MonitorConfig:
         webhooks=[_parse_webhook(wh) for wh in data.get("webhooks", [])],
         dashboard=_parse_dashboard(data.get("dashboard", {})),
         history=_parse_history(data.get("history", {})),
+        email=_parse_email(data.get("email", {})),
         log_level=data.get("log_level", "INFO").upper(),
         log_format=data.get("log_format", "json"),
         metrics_enabled=data.get("metrics_enabled", True),
