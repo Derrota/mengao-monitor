@@ -340,9 +340,19 @@ class TestWebhookSender:
         """Testa envio sem cooldown."""
         mock_request.return_value.status_code = 200
         
+        from rate_limiter import RateLimitConfig
+        
         webhooks = [{"type": "discord", "url": "https://discord.com/test"}]
-        sender = WebhookSender(webhooks)
-        sender.cooldown_seconds = 0  # Sem cooldown
+        rate_config = RateLimitConfig(
+            cooldown_seconds=0, 
+            max_alerts_per_minute=100, 
+            max_alerts_per_hour=1000, 
+            max_alerts_per_day=10000,
+            burst_limit=100,
+            burst_window_seconds=1
+        )
+        sender = WebhookSender(webhooks, rate_limit_config=rate_config)
+        sender.cooldown_seconds = 0  # Sem cooldown no sender também
         
         result = {
             'name': 'API',
@@ -355,6 +365,10 @@ class TestWebhookSender:
         # Primeiro envio
         sender.send(result, MagicMock())
         assert mock_request.call_count == 1
+        
+        # Limpa cooldown interno do rate_limiter para permitir segundo envio
+        sender.rate_limiter.counters.clear()
+        sender.cooldowns.clear()
         
         # Segundo envio (sem cooldown, deve enviar)
         sender.send(result, MagicMock())

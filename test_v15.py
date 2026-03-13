@@ -310,7 +310,7 @@ class TestEmailAlerts:
         # Config desabilitado
         config = EmailConfig(enabled=False)
         alerter = EmailAlertSender(config)
-        assert alerter.enabled is False
+        assert alerter.config.enabled is False
 
     def test_html_template_rendering(self):
         """Testa renderização de template HTML."""
@@ -329,16 +329,20 @@ class TestEmailAlerts:
         alerter = EmailAlertSender(config)
         
         # Testa template de alerta
-        html = alerter._render_alert_html(
-            api_name="Test API",
-            url="https://test.com",
-            error="Connection refused",
-            status_code=0
-        )
+        result = {
+            'name': 'Test API',
+            'url': 'https://test.com',
+            'status': 'offline',
+            'status_code': 0,
+            'response_time_ms': 0,
+            'error': 'Connection refused',
+            'timestamp': datetime.now().isoformat()
+        }
+        html = alerter._create_html_body(result, 'down')
         
         assert "Test API" in html
         assert "Connection refused" in html
-        assert "🔴" in html or "offline" in html.lower()
+        assert "offline" in html.lower() or "down" in html.lower()
 
     def test_recovery_template(self):
         """Testa template de recuperação."""
@@ -356,11 +360,16 @@ class TestEmailAlerts:
         
         alerter = EmailAlertSender(config)
         
-        html = alerter._render_recovery_html(
-            api_name="Test API",
-            url="https://test.com",
-            response_time_ms=150.5
-        )
+        result = {
+            'name': 'Test API',
+            'url': 'https://test.com',
+            'status': 'online',
+            'status_code': 200,
+            'response_time_ms': 150.5,
+            'error': '',
+            'timestamp': datetime.now().isoformat()
+        }
+        html = alerter._create_html_body(result, 'up')
         
         assert "Test API" in html
         assert "150.5" in html or "online" in html.lower()
