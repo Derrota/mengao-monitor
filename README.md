@@ -12,6 +12,8 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 ## ✨ Features
 
 - **Monitoramento multi-endpoint** - Monitore várias APIs simultaneamente
+- **API REST de Gerenciamento** - Adicione, remova, pause endpoints em runtime (v2.1) 🆕
+- **Hot-reload de Config** - Detecta mudanças no config.json automaticamente (v2.1) 🆕
 - **Webhooks multi-plataforma** - Alertas via Discord, Slack, Telegram
 - **Alertas por email** - Notificações SMTP com HTML templates
 - **Dashboard web v2** - Interface visual com gráficos Chart.js em tempo real
@@ -97,6 +99,106 @@ python main.py --log-level DEBUG --log-format text
 | `:8080/health` | Health check do monitor |
 | `:8080/status` | Status detalhado com métricas de sistema |
 | `:8080/webhooks/stats` | Estatísticas detalhadas de webhooks |
+| `:8081/api/v1/endpoints` | API REST de gerenciamento (v2.1) 🆕 |
+
+## 🔧 API REST de Gerenciamento (v2.1) 🆕
+
+Gerencie endpoints em runtime sem restart:
+
+```bash
+# Listar todos os endpoints
+curl http://localhost:8081/api/v1/endpoints
+
+# Adicionar novo endpoint
+curl -X POST http://localhost:8081/api/v1/endpoints \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Nova API",
+    "url": "https://api.nova.com/health",
+    "interval": 30,
+    "tags": ["produção"]
+  }'
+
+# Obter endpoint específico
+curl http://localhost:8081/api/v1/endpoints/Nova%20API
+
+# Atualizar endpoint
+curl -X PUT http://localhost:8081/api/v1/endpoints/Nova%20API \
+  -H "Content-Type: application/json" \
+  -d '{"timeout": 30, "interval": 120}'
+
+# Pausar endpoint
+curl -X POST http://localhost:8081/api/v1/endpoints/Nova%20API/pause
+
+# Retomar endpoint
+curl -X POST http://localhost:8081/api/v1/endpoints/Nova%20API/resume
+
+# Remover endpoint
+curl -X DELETE http://localhost:8081/api/v1/endpoints/Nova%20API
+
+# Estatísticas do gerenciador
+curl http://localhost:8081/api/v1/stats
+```
+
+**Resposta do `/api/v1/endpoints`:**
+```json
+{
+  "endpoints": [
+    {
+      "name": "API Produção",
+      "url": "https://api.prod.com/health",
+      "method": "GET",
+      "timeout": 15,
+      "interval": 60,
+      "enabled": true,
+      "paused": false,
+      "last_status": "online",
+      "checks_count": 142,
+      "errors_count": 3,
+      "added_at": "2026-03-13T06:00:00"
+    }
+  ],
+  "stats": {
+    "total": 5,
+    "active": 4,
+    "paused": 1,
+    "statuses": {"online": 4, "offline": 1},
+    "total_checks": 1247,
+    "total_errors": 12
+  }
+}
+```
+
+## 👁️ Hot-reload de Configuração (v2.1) 🆕
+
+O Mengão Monitor detecta automaticamente mudanças no arquivo de configuração:
+
+```json
+{
+  "config_watcher": {
+    "enabled": true,
+    "check_interval": 10,
+    "reload_count": 3,
+    "last_reload": "2026-03-13T06:15:00"
+  }
+}
+```
+
+**Como funciona:**
+1. Monitor calcula hash SHA256 do config.json a cada 10s
+2. Quando detecta mudança, recarrega automaticamente
+3. Loga diff do que mudou (endpoints adicionados/removidos/modificados)
+4. Não reinicia o monitor — apenas atualiza config interna
+
+**Exemplo de log:**
+```
+🔄 Config change detected: config.json
+🔄 Hot-reload: Processing config changes...
+  Added: 1 endpoints
+  Removed: 0 endpoints
+  Modified: 2 endpoints
+✅ Config reloaded successfully
+```
 
 ## 📈 Métricas de Sistema
 
@@ -332,21 +434,25 @@ pytest test_v15.py::TestRateLimiter -v
 
 ```
 mengao-monitor/
-├── main.py              # Entry point principal
+├── main.py              # Entry point principal (v2.1)
 ├── monitor.py           # Monitor legado (v1.2)
 ├── config.py            # Configuração com validação
+├── config_watcher.py    # Hot-reload de configuração (v2.1) 🆕
 ├── logger.py            # Logging estruturado
 ├── metrics.py           # Métricas Prometheus (APIs)
 ├── system_metrics.py    # Métricas de sistema (CPU, memória, disco)
 ├── webhooks.py          # Notificações multi-plataforma + retry
 ├── rate_limiter.py      # Rate limiting por endpoint (v1.6)
+├── api_manager.py       # API REST de gerenciamento (v2.1) 🆕
 ├── history.py           # Histórico SQLite
 ├── dashboard.py         # Dashboard web (v1.x)
 ├── dashboard_v2.py      # Dashboard web v2 com Chart.js (v2.0)
 ├── health.py            # Health check + métricas de sistema
 ├── email_alerts.py      # Alertas por email
 ├── test_monitor.py      # Testes legados
+├── test_v13.py          # Testes v1.3
 ├── test_v15.py          # Testes v1.5+ (config, metrics, rate limiter)
+├── test_v21.py          # Testes v2.1 (API manager, config watcher) 🆕
 ├── requirements.txt     # Dependências
 ├── Dockerfile           # Container
 ├── docker-compose.yml
@@ -358,10 +464,11 @@ mengao-monitor/
 - [x] **v1.5**: Métricas de sistema (CPU, memória, disco, rede) ✅
 - [x] **v1.6**: Rate limiting + retry automático ✅
 - [x] **v2.0**: Dashboard com gráficos Chart.js + webhook stats ✅
-- [ ] **v2.1**: Autenticação no dashboard
-- [ ] **v2.2**: Multi-region checks
-- [ ] **v2.3**: SLA reporting automático
-- [ ] **v2.4**: Interface React + API REST
+- [x] **v2.1**: API REST de gerenciamento + Hot-reload de config ✅
+- [ ] **v2.2**: Autenticação no dashboard + API
+- [ ] **v2.3**: Multi-region checks
+- [ ] **v2.4**: SLA reporting automático
+- [ ] **v2.5**: Interface React + WebSocket
 
 ## 🤝 Contribuindo
 
