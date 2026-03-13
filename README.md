@@ -22,6 +22,8 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Configuração flexível** - JSON ou YAML com validação
 - **Docker ready** - Dockerfile e docker-compose incluídos
 - **CI/CD** - GitHub Actions com testes multi-Python
+- **Rate Limiting** - Proteção contra spam de alertas (v1.6)
+- **Retry automático** - Webhooks com backoff exponencial (v1.6)
 
 ## 🚀 Quick Start
 
@@ -96,7 +98,7 @@ python main.py --log-level DEBUG --log-format text
 
 ## 📈 Métricas de Sistema
 
-O Mengão Monitor agora coleta métricas de sistema automaticamente:
+O Mengão Monitor coleta métricas de sistema automaticamente:
 
 ```
 # CPU
@@ -120,6 +122,43 @@ mengao_system_network_bytes_recv 2048000
 mengao_system_process_count 156
 mengao_system_uptime_seconds 86400.5
 ```
+
+## 🛡️ Rate Limiting (v1.6)
+
+Proteção contra spam de alertas com múltiplas camadas:
+
+```python
+# Configuração padrão
+max_alerts_per_minute: 5
+max_alerts_per_hour: 30
+max_alerts_per_day: 100
+burst_limit: 3           # máx em rajada
+burst_window_seconds: 60 # janela de rajada
+cooldown_seconds: 300    # entre alertas do mesmo endpoint
+```
+
+**Camadas de proteção:**
+- ⏱️ **Por minuto** - Máximo 5 alertas/minuto por endpoint
+- 📊 **Por hora** - Máximo 30 alertas/hora por endpoint  
+- 📅 **Por dia** - Máximo 100 alertas/dia por endpoint
+- 💥 **Burst** - Máximo 3 alertas em 60 segundos (rajada)
+- ❄️ **Cooldown** - 5 minutos entre alertas do mesmo endpoint
+
+## 🔄 Retry Automático (v1.6)
+
+Webhooks com retry automático e backoff exponencial:
+
+```
+Tentativa 1 → Falha → Espera 1s
+Tentativa 2 → Falha → Espera 3s  
+Tentativa 3 → Falha → Erro final
+```
+
+- **3 tentativas** por webhook
+- **Backoff exponencial**: 1s, 3s, 5s
+- **Timeout**: 10s por request
+- **4xx**: Não retry (erro do cliente)
+- **5xx**: Retry automático (erro do servidor)
 
 ## ⚙️ Configuração Completa
 
@@ -180,11 +219,19 @@ mengao_system_uptime_seconds 86400.5
     "retention_days": 90,
     "export_format": "csv"
   },
+  "rate_limiting": {
+    "max_alerts_per_minute": 5,
+    "max_alerts_per_hour": 30,
+    "max_alerts_per_day": 100,
+    "burst_limit": 3,
+    "burst_window_seconds": 60,
+    "cooldown_seconds": 300
+  },
   "log_level": "INFO",
   "log_format": "json",
   "metrics_enabled": true,
   "metrics_port": 9090,
-  "user_agent": "MengaoMonitor/1.5"
+  "user_agent": "MengaoMonitor/1.6"
 }
 ```
 
@@ -222,6 +269,13 @@ mengao_monitor_response_time_ms{name="API Prod",type="last"} 142.50
 # HELP mengao_monitor_uptime_percentage Uptime percentage
 # TYPE mengao_monitor_uptime_percentage gauge
 mengao_monitor_uptime_percentage{name="API Prod"} 99.95
+
+# Rate limiting metrics (v1.6)
+mengao_webhook_sent_total 42
+mengao_webhook_failed_total 3
+mengao_webhook_retries_total 8
+mengao_rate_limit_allowed_total 156
+mengao_rate_limit_blocked_total 12
 ```
 
 ## 🧪 Testes
@@ -234,7 +288,10 @@ pytest
 pytest --cov=. --cov-report=html
 
 # Testes específicos
-pytest test_monitor.py -v
+pytest test_v15.py -v
+
+# Testes de rate limiting
+pytest test_v15.py::TestRateLimiter -v
 ```
 
 ## 📁 Estrutura do Projeto
@@ -247,12 +304,14 @@ mengao-monitor/
 ├── logger.py            # Logging estruturado
 ├── metrics.py           # Métricas Prometheus (APIs)
 ├── system_metrics.py    # Métricas de sistema (CPU, memória, disco)
-├── webhooks.py          # Notificações multi-plataforma
+├── webhooks.py          # Notificações multi-plataforma + retry
+├── rate_limiter.py      # Rate limiting por endpoint (v1.6)
 ├── history.py           # Histórico SQLite
 ├── dashboard.py         # Dashboard web
 ├── health.py            # Health check + métricas de sistema
 ├── email_alerts.py      # Alertas por email
-├── test_monitor.py      # Testes
+├── test_monitor.py      # Testes legados
+├── test_v15.py          # Testes v1.5+ (config, metrics, rate limiter)
 ├── requirements.txt     # Dependências
 ├── Dockerfile           # Container
 ├── docker-compose.yml
@@ -262,9 +321,10 @@ mengao-monitor/
 ## 🗺️ Roadmap
 
 - [x] **v1.5**: Métricas de sistema (CPU, memória, disco, rede) ✅
-- [ ] **v1.6**: Autenticação no dashboard
-- [ ] **v1.7**: Multi-region checks
-- [ ] **v1.8**: SLA reporting automático
+- [x] **v1.6**: Rate limiting + retry automático ✅
+- [ ] **v1.7**: Autenticação no dashboard
+- [ ] **v1.8**: Multi-region checks
+- [ ] **v1.9**: SLA reporting automático
 - [ ] **v2.0**: Interface React + API REST
 
 ## 🤝 Contribuindo
