@@ -3,6 +3,7 @@
 **Monitor de APIs simples, eficiente e rubro-negro.**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
+[![CI](https://github.com/Derrota/mengao-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/Derrota/mengao-monitor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Flamengo](https://img.shields.io/badge/torcida-rubro--negra-red.svg)](https://www.flamengo.com.br)
 
@@ -18,6 +19,8 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Logging estruturado** - JSON para produção, texto para desenvolvimento
 - **Configuração flexível** - JSON ou YAML com validação
 - **Docker ready** - Dockerfile e docker-compose incluídos
+- **Email alerts** - Notificações por SMTP (Gmail, etc.)
+- **CI/CD** - GitHub Actions com testes multi-Python
 
 ## 🚀 Quick Start
 
