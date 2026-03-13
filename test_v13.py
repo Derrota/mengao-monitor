@@ -66,8 +66,7 @@ def sample_config_dict():
             "theme": "dark"
         },
         "history": {
-            "enabled": True,
-            "db_path": ":memory:"
+            "enabled": True
         },
         "log_level": "INFO",
         "log_format": "json",
@@ -85,9 +84,10 @@ def config_file(sample_config_dict):
 
 
 @pytest.fixture
-def history():
-    """Instância UptimeHistory com banco em memória."""
-    return UptimeHistory(":memory:")
+def history(tmp_path):
+    """Instância UptimeHistory com banco temporário."""
+    db_file = tmp_path / "test_uptime.db"
+    return UptimeHistory(str(db_file))
 
 
 # ============================================================
