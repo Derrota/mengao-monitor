@@ -200,6 +200,56 @@ O Mengão Monitor detecta automaticamente mudanças no arquivo de configuração
 ✅ Config reloaded successfully
 ```
 
+## 🛡️ Autenticação (v2.2) 🆕
+
+Proteção token-based para endpoints sensíveis:
+
+```bash
+# Token bootstrap é gerado automaticamente na primeira execução
+# Verifique os logs para o token inicial
+
+# Usar token em requisições
+curl -H "Authorization: Bearer mm_seu_token_aqui" http://localhost:8080/
+
+# Criar novo token (requer admin)
+curl -X POST http://localhost:8081/api/v1/tokens \
+  -H "Authorization: Bearer mm_admin_token" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "monitoring", "scopes": ["read"], "expires_hours": 720}'
+
+# Listar tokens
+curl -H "Authorization: Bearer mm_admin_token" http://localhost:8081/api/v1/tokens
+
+# Revogar token
+curl -X DELETE http://localhost:8081/api/v1/tokens/TOKEN_ID \
+  -H "Authorization: Bearer mm_admin_token"
+```
+
+**Scopes disponíveis:**
+- `read` - Acesso a dashboard, métricas, status
+- `write` - Gerenciar endpoints (adicionar, pausar, remover)
+- `admin` - Acesso total (gerenciar tokens, config)
+
+**Proteção contra brute force:**
+- 10 tentativas falhas → IP bloqueado por 5 minutos
+- Lockout automático com expiração
+- Stats de tentativas falhas disponíveis
+
+**Endpoints protegidos:**
+| Endpoint | Scope necessário |
+|----------|-----------------|
+| `/` (dashboard) | read |
+| `/metrics` | read |
+| `/webhooks/stats` | read |
+| `/api/v1/endpoints` (GET) | read |
+| `/api/v1/endpoints` (POST/PUT/DELETE) | write |
+| `/api/v1/tokens` | admin |
+
+**Endpoints públicos (sem auth):**
+- `/health` - Health check
+- `/status` - Status básico
+- `/apis` - Lista de APIs monitoradas
+
 ## 📈 Métricas de Sistema
 
 O Mengão Monitor coleta métricas de sistema automaticamente:
@@ -428,6 +478,9 @@ pytest test_v15.py -v
 
 # Testes de rate limiting
 pytest test_v15.py::TestRateLimiter -v
+
+# Testes de autenticação
+pytest test_auth.py -v
 ```
 
 ## 📁 Estrutura do Projeto
@@ -453,6 +506,7 @@ mengao-monitor/
 ├── test_v13.py          # Testes v1.3
 ├── test_v15.py          # Testes v1.5+ (config, metrics, rate limiter)
 ├── test_v21.py          # Testes v2.1 (API manager, config watcher) 🆕
+├── test_auth.py         # Testes v2.2 (autenticação, brute force) 🆕
 ├── requirements.txt     # Dependências
 ├── Dockerfile           # Container
 ├── docker-compose.yml
@@ -465,7 +519,7 @@ mengao-monitor/
 - [x] **v1.6**: Rate limiting + retry automático ✅
 - [x] **v2.0**: Dashboard com gráficos Chart.js + webhook stats ✅
 - [x] **v2.1**: API REST de gerenciamento + Hot-reload de config ✅
-- [ ] **v2.2**: Autenticação no dashboard + API
+- [x] **v2.2**: Autenticação no dashboard + API ✅
 - [ ] **v2.3**: Multi-region checks
 - [ ] **v2.4**: SLA reporting automático
 - [ ] **v2.5**: Interface React + WebSocket
