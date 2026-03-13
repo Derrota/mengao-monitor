@@ -19,7 +19,7 @@ from logger import setup_logging, get_logger, get_api_logger, get_webhook_logger
 from metrics import PrometheusMetrics, start_metrics_server
 from webhooks import WebhookSender
 from history import UptimeHistory
-from email_alerts import EmailAlerter
+from email_alerts import EmailAlertSender
 from health import update_state, set_webhook_sender, start_health_server, enable_auth, create_bootstrap_token
 from auth import auth_manager
 
@@ -52,9 +52,9 @@ class MengaoMonitor:
             self.history = UptimeHistory(config.history.db_path)
         
         # Email alerts
-        self.email_alerter: Optional[EmailAlerter] = None
+        self.email_alerter: Optional[EmailAlertSender] = None
         if config.email.enabled:
-            self.email_alerter = EmailAlerter(config.email)
+            self.email_alerter = EmailAlertSender(config.email)
             if self.email_alerter.enabled:
                 self.logger.info(f"📧 Email alerts enabled → {', '.join(config.email.to_emails)}")
         
