@@ -14,7 +14,7 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Monitoramento multi-endpoint** - Monitore várias APIs simultaneamente
 - **Webhooks multi-plataforma** - Alertas via Discord, Slack, Telegram
 - **Alertas por email** - Notificações SMTP com HTML templates
-- **Dashboard web** - Interface visual com tema rubro-negro
+- **Dashboard web v2** - Interface visual com gráficos Chart.js em tempo real
 - **Métricas Prometheus** - Exportação padrão para integração
 - **Métricas de Sistema** - CPU, memória, disco, rede em tempo real
 - **Histórico SQLite** - Tracking de uptime com estatísticas
@@ -24,6 +24,7 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **CI/CD** - GitHub Actions com testes multi-Python
 - **Rate Limiting** - Proteção contra spam de alertas (v1.6)
 - **Retry automático** - Webhooks com backoff exponencial (v1.6)
+- **Webhook Stats** - Estatísticas detalhadas de envio (v2.0)
 
 ## 🚀 Quick Start
 
@@ -90,11 +91,12 @@ python main.py --log-level DEBUG --log-format text
 
 | Endpoint | Descrição |
 |----------|-----------|
-| `:9090/metrics` | Métricas Prometheus (APIs + Sistema) |
-| `:8080/` | Dashboard web |
+| `:9090/metrics` | Métricas Prometheus (APIs + Sistema + Webhooks) |
+| `:8080/` | Dashboard web v2 com gráficos Chart.js |
 | `:8080/apis` | Status JSON das APIs |
 | `:8080/health` | Health check do monitor |
 | `:8080/status` | Status detalhado com métricas de sistema |
+| `:8080/webhooks/stats` | Estatísticas detalhadas de webhooks |
 
 ## 📈 Métricas de Sistema
 
@@ -121,6 +123,32 @@ mengao_system_network_bytes_recv 2048000
 # Sistema
 mengao_system_process_count 156
 mengao_system_uptime_seconds 86400.5
+```
+
+## 📊 Webhook Stats (v2.0)
+
+O dashboard v2 exibe estatísticas detalhadas de webhooks:
+
+```json
+{
+  "sent": 42,
+  "failed": 3,
+  "retries": 8,
+  "rate_limited": 12,
+  "cooldown_skipped": 25,
+  "rate_limiter": {
+    "allowed": 156,
+    "blocked": 12
+  }
+}
+```
+
+**Métricas Prometheus de Webhooks:**
+```
+mengao_monitor_webhooks_sent_total 42
+mengao_monitor_webhooks_failed_total 3
+mengao_monitor_webhooks_retries_total 8
+mengao_monitor_webhooks_rate_limited_total 12
 ```
 
 ## 🛡️ Rate Limiting (v1.6)
@@ -231,7 +259,7 @@ Tentativa 3 → Falha → Erro final
   "log_format": "json",
   "metrics_enabled": true,
   "metrics_port": 9090,
-  "user_agent": "MengaoMonitor/1.6"
+  "user_agent": "MengaoMonitor/2.0"
 }
 ```
 
@@ -276,6 +304,12 @@ mengao_webhook_failed_total 3
 mengao_webhook_retries_total 8
 mengao_rate_limit_allowed_total 156
 mengao_rate_limit_blocked_total 12
+
+# Webhook metrics (v2.0)
+mengao_monitor_webhooks_sent_total 42
+mengao_monitor_webhooks_failed_total 3
+mengao_monitor_webhooks_retries_total 8
+mengao_monitor_webhooks_rate_limited_total 12
 ```
 
 ## 🧪 Testes
@@ -307,7 +341,8 @@ mengao-monitor/
 ├── webhooks.py          # Notificações multi-plataforma + retry
 ├── rate_limiter.py      # Rate limiting por endpoint (v1.6)
 ├── history.py           # Histórico SQLite
-├── dashboard.py         # Dashboard web
+├── dashboard.py         # Dashboard web (v1.x)
+├── dashboard_v2.py      # Dashboard web v2 com Chart.js (v2.0)
 ├── health.py            # Health check + métricas de sistema
 ├── email_alerts.py      # Alertas por email
 ├── test_monitor.py      # Testes legados
@@ -322,10 +357,11 @@ mengao-monitor/
 
 - [x] **v1.5**: Métricas de sistema (CPU, memória, disco, rede) ✅
 - [x] **v1.6**: Rate limiting + retry automático ✅
-- [ ] **v1.7**: Autenticação no dashboard
-- [ ] **v1.8**: Multi-region checks
-- [ ] **v1.9**: SLA reporting automático
-- [ ] **v2.0**: Interface React + API REST
+- [x] **v2.0**: Dashboard com gráficos Chart.js + webhook stats ✅
+- [ ] **v2.1**: Autenticação no dashboard
+- [ ] **v2.2**: Multi-region checks
+- [ ] **v2.3**: SLA reporting automático
+- [ ] **v2.4**: Interface React + API REST
 
 ## 🤝 Contribuindo
 

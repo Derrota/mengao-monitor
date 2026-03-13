@@ -20,6 +20,7 @@ from metrics import PrometheusMetrics, start_metrics_server
 from webhooks import WebhookSender
 from history import UptimeHistory
 from email_alerts import EmailAlerter
+from health import update_state, set_webhook_sender, start_health_server
 
 
 class MengaoMonitor:
@@ -42,6 +43,7 @@ class MengaoMonitor:
             for wh in config.webhooks
         ]
         self.webhook_sender = WebhookSender(webhooks_config)
+        set_webhook_sender(self.webhook_sender)
         
         # History
         self.history: Optional[UptimeHistory] = None
