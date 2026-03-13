@@ -24,5 +24,5 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 EXPOSE 8080
 
 # Entry point
-ENTRYPOINT ["python", "monitor.py"]
-CMD ["-c", "/data/config.json", "--health", "--health-port", "8080"]
+ENTRYPOINT ["python", "main.py"]
+CMD ["-c", "/data/config.json"]

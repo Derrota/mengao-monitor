@@ -5,6 +5,16 @@
   "history_db": "uptime.db",
   "webhook_cooldown": 300,
   
+  "email": {
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "username": "seu-email@gmail.com",
+    "password": "sua-app-password",
+    "from_email": "seu-email@gmail.com",
+    "to_emails": ["alerta@exemplo.com", "admin@exemplo.com"],
+    "use_tls": true
+  },
+  
   "webhooks": [
     {
       "type": "discord",
