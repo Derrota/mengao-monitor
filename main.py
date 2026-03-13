@@ -1,7 +1,6 @@
 """
 Mengão Monitor - Main Entry Point
 Orchestrates all components: config, logging, metrics, webhooks, history.
-v2.1: API REST + Hot-reload de configuração
 """
 
 import argparse
@@ -21,17 +20,15 @@ from metrics import PrometheusMetrics, start_metrics_server
 from webhooks import WebhookSender
 from history import UptimeHistory
 from email_alerts import EmailAlerter
-from health import update_state, set_webhook_sender, start_health_server
-from api_manager import endpoint_manager, start_api_server, EndpointRuntime
-from config_watcher import ConfigWatcher, ConfigDiff
+from health import update_state, set_webhook_sender, start_health_server, enable_auth, create_bootstrap_token
+from auth import auth_manager
 
 
 class MengaoMonitor:
-    """Main monitor class. v2.1 with API + Hot-reload."""
+    """Main monitor class."""
 
-    def __init__(self, config: MonitorConfig, config_path: str = "config.json"):
+    def __init__(self, config: MonitorConfig):
         self.config = config
-        self.config_path = config_path
         self.logger = get_logger("main")
         self.api_logger = get_api_logger()
         self.webhook_logger = get_webhook_logger()
@@ -69,90 +66,6 @@ class MengaoMonitor:
         
         # Previous status for change detection
         self.previous_status: dict = {}
-        
-        # Config watcher (hot-reload)
-        self.config_watcher = ConfigWatcher(
-            config_path=config_path,
-            callback=self._on_config_reload,
-            check_interval=10
-        )
-        self.config_watcher.on_reload_start(self._on_reload_start)
-        self.config_watcher.on_reload_success(self._on_reload_success)
-        self.config_watcher.on_reload_error(self._on_reload_error)
-        
-        # Load endpoints into API manager
-        self._sync_endpoints_to_api_manager()
-        
-        # Register API manager change callback
-        endpoint_manager.on_change(self._on_endpoint_change)
-
-    def _sync_endpoints_to_api_manager(self):
-        """Sincroniza endpoints do config para o API manager."""
-        for ep in self.config.endpoints:
-            endpoint_manager.add_endpoint({
-                'name': ep.name,
-                'url': ep.url,
-                'method': ep.method,
-                'timeout': ep.timeout,
-                'expected_status': ep.expected_status,
-                'interval': ep.interval,
-                'enabled': ep.enabled,
-                'tags': list(ep.tags) if ep.tags else [],
-                'headers': dict(ep.headers) if ep.headers else {},
-                'body': ep.body,
-            })
-
-    def _on_config_reload(self, new_config: dict):
-        """Callback para hot-reload de config."""
-        self.logger.info("🔄 Hot-reload: Processing config changes...")
-        
-        # TODO: Implement full config reload
-        # For now, just log the change
-        if 'endpoints' in new_config:
-            diff = ConfigDiff.endpoints_diff(
-                [ep.__dict__ for ep in self.config.endpoints],
-                new_config['endpoints']
-            )
-            self.logger.info(f"  Added: {len(diff['added'])} endpoints")
-            self.logger.info(f"  Removed: {len(diff['removed'])} endpoints")
-            self.logger.info(f"  Modified: {len(diff['modified'])} endpoints")
-
-    def _on_reload_start(self, config_path):
-        """Callback para início de reload."""
-        self.logger.info(f"🔄 Config change detected: {config_path}")
-
-    def _on_reload_success(self, new_config):
-        """Callback para reload bem-sucedido."""
-        self.logger.info("✅ Config reloaded successfully")
-
-    def _on_reload_error(self, error):
-        """Callback para erro de reload."""
-        self.logger.error(f"❌ Config reload failed: {error}")
-
-    def _on_endpoint_change(self, action: str, name: str):
-        """Callback para mudanças via API."""
-        self.logger.info(f"🔧 API: Endpoint '{name}' {action}")
-        
-        if action == 'added':
-            endpoint = endpoint_manager.get_endpoint(name)
-            if endpoint:
-                self.metrics.register_endpoint(endpoint.name, endpoint.url)
-        
-        # Config watcher (hot-reload)
-        self.config_watcher = ConfigWatcher(
-            config_path=config_path,
-            callback=self._on_config_reload,
-            check_interval=10
-        )
-        self.config_watcher.on_reload_start(self._on_reload_start)
-        self.config_watcher.on_reload_success(self._on_reload_success)
-        self.config_watcher.on_reload_error(self._on_reload_error)
-        
-        # Load endpoints into API manager
-        self._sync_endpoints_to_api_manager()
-        
-        # Register API manager change callback
-        endpoint_manager.on_change(self._on_endpoint_change)
 
     def check_endpoint(self, endpoint_config) -> dict:
         """
@@ -308,15 +221,13 @@ class MengaoMonitor:
         self.running = True
         
         self.logger.info("=" * 60)
-        self.logger.info("🦞 MENGÃO MONITOR v2.1 INICIADO")
+        self.logger.info("🦞 MENGÃO MONITOR v1.5 INICIADO")
         self.logger.info("=" * 60)
         self.logger.info(f"Endpoints: {len([e for e in self.config.endpoints if e.enabled])}")
         self.logger.info(f"Webhooks: {len([w for w in self.config.webhooks if w.enabled])}")
         self.logger.info(f"Dashboard: {'enabled' if self.config.dashboard.enabled else 'disabled'}")
         self.logger.info(f"History: {'enabled' if self.config.history.enabled else 'disabled'}")
         self.logger.info(f"Metrics: {'enabled' if self.config.metrics_enabled else 'disabled'}")
-        self.logger.info(f"API Manager: enabled on :8081")
-        self.logger.info(f"Hot-reload: enabled (10s interval)")
         
         # Start metrics server
         if self.config.metrics_enabled:
@@ -326,14 +237,6 @@ class MengaoMonitor:
                 port=self.config.metrics_port,
             )
             self.logger.info(f"📊 Metrics server on :{self.config.metrics_port}/metrics")
-        
-        # Start API server
-        start_api_server(port=8081)
-        self.logger.info(f"🔧 API server on :8081/api/v1/endpoints")
-        
-        # Start config watcher
-        self.config_watcher.start()
-        self.logger.info(f"👁️ Config watcher started: {self.config_path}")
         
         # Signal handling
         def shutdown(signum, frame):
@@ -359,8 +262,6 @@ class MengaoMonitor:
                 self.logger.error(f"Error in check cycle: {e}", exc_info=True)
                 time.sleep(10)
         
-        # Cleanup
-        self.config_watcher.stop()
         self.logger.info("🦞 Mengão Monitor stopped")
 
     def run_once(self) -> None:
@@ -434,7 +335,7 @@ def create_default_config(path: str = "config.json") -> None:
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="🦞 Mengão Monitor v2.1 - API Monitoring Tool",
+        description="🦞 Mengão Monitor v1.5 - API Monitoring Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -444,16 +345,6 @@ Examples:
   mengao-monitor --stats           # Show 24h statistics
   mengao-monitor --init            # Create default config
   mengao-monitor --sample          # Create sample config
-
-API Endpoints (runtime):
-  GET  /api/v1/endpoints           # List all endpoints
-  POST /api/v1/endpoints           # Add new endpoint
-  GET  /api/v1/endpoints/<name>    # Get endpoint details
-  PUT  /api/v1/endpoints/<name>    # Update endpoint
-  DELETE /api/v1/endpoints/<name>  # Remove endpoint
-  POST /api/v1/endpoints/<name>/pause  # Pause endpoint
-  POST /api/v1/endpoints/<name>/resume # Resume endpoint
-  GET  /api/v1/stats               # Manager statistics
         """,
     )
     
@@ -500,7 +391,7 @@ API Endpoints (runtime):
     setup_logging(level=config.log_level, format_type=config.log_format)
     
     # Create monitor
-    monitor = MengaoMonitor(config, config_path=args.config)
+    monitor = MengaoMonitor(config)
     
     # Run
     if args.stats:
