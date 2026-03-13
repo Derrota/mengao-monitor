@@ -65,4 +65,4 @@ jobs:
 
     - name: Test Docker image
       run: |
-        docker run --rm mengao-monitor:test python -c "from main import main; print('✅ Import OK')"
+        docker run --rm --entrypoint python mengao-monitor:test -c "from main import main; print('✅ Import OK')"
