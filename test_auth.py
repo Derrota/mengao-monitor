@@ -336,6 +336,7 @@ class TestAuthDecorators:
     def test_optional_auth_no_header(self):
         """Auth opcional sem header funciona."""
         from flask import Flask
+        from flask import request
         app = Flask(__name__)
         
         @app.route("/optional")
