@@ -111,31 +111,21 @@ class EmailConfig:
     enabled: bool = False
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
-    use_tls: bool = True
     username: str = ""
     password: str = ""
-    from_addr: str = ""
-    to_addrs: List[str] = field(default_factory=list)
-    events: List[str] = field(default_factory=lambda: ["down", "up"])
-    cooldown: int = 300  # seconds between alerts for same endpoint
+    from_email: str = ""
+    to_emails: List[str] = field(default_factory=list)
+    use_tls: bool = True
 
     def validate(self) -> List[str]:
         errors = []
         if self.enabled:
-            if not self.smtp_host:
-                errors.append("SMTP host is required when email is enabled")
-            if self.smtp_port < 1 or self.smtp_port > 65535:
-                errors.append(f"Invalid SMTP port: {self.smtp_port}")
             if not self.username:
-                errors.append("SMTP username is required")
+                errors.append("Email username is required")
             if not self.password:
-                errors.append("SMTP password is required")
-            if not self.from_addr:
-                errors.append("From address is required")
-            if not self.to_addrs:
-                errors.append("At least one recipient is required")
-            if self.cooldown < 0:
-                errors.append("Cooldown cannot be negative")
+                errors.append("Email password is required")
+            if not self.to_emails:
+                errors.append("At least one recipient email is required")
         return errors
 
 
@@ -153,7 +143,7 @@ class MonitorConfig:
     log_format: str = "json"  # json, text
     metrics_enabled: bool = True
     metrics_port: int = 9090
-    user_agent: str = "MengaoMonitor/1.4"
+    user_agent: str = "MengaoMonitor/1.3"
 
     def validate(self) -> List[str]:
         """Validate entire configuration."""
@@ -177,9 +167,6 @@ class MonitorConfig:
         
         hist_errors = self.history.validate()
         errors.extend([f"History: {e}" for e in hist_errors])
-        
-        email_errors = self.email.validate()
-        errors.extend([f"Email: {e}" for e in email_errors])
         
         if self.log_level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
             errors.append(f"Invalid log level: {self.log_level}")
@@ -230,6 +217,20 @@ def _parse_dashboard(data: Dict[str, Any]) -> DashboardConfig:
     )
 
 
+def _parse_email(data: Dict[str, Any]) -> EmailConfig:
+    """Parse email config from dict."""
+    return EmailConfig(
+        enabled=data.get("enabled", False),
+        smtp_host=data.get("smtp_host", "smtp.gmail.com"),
+        smtp_port=data.get("smtp_port", 587),
+        username=data.get("username", ""),
+        password=data.get("password", ""),
+        from_email=data.get("from_email", ""),
+        to_emails=data.get("to_emails", []),
+        use_tls=data.get("use_tls", True),
+    )
+
+
 def _parse_history(data: Dict[str, Any]) -> HistoryConfig:
     """Parse history config from dict."""
     return HistoryConfig(
@@ -237,22 +238,6 @@ def _parse_history(data: Dict[str, Any]) -> HistoryConfig:
         db_path=data.get("db_path", "uptime_history.db"),
         retention_days=data.get("retention_days", 90),
         export_format=data.get("export_format", "csv"),
-    )
-
-
-def _parse_email(data: Dict[str, Any]) -> EmailConfig:
-    """Parse email config from dict."""
-    return EmailConfig(
-        enabled=data.get("enabled", False),
-        smtp_host=data.get("smtp_host", "smtp.gmail.com"),
-        smtp_port=data.get("smtp_port", 587),
-        use_tls=data.get("use_tls", True),
-        username=data.get("username", ""),
-        password=data.get("password", ""),
-        from_addr=data.get("from_addr", ""),
-        to_addrs=data.get("to_addrs", []),
-        events=data.get("events", ["down", "up"]),
-        cooldown=data.get("cooldown", 300),
     )
 
 
@@ -309,7 +294,7 @@ def parse_config(data: Dict[str, Any]) -> MonitorConfig:
         log_format=data.get("log_format", "json"),
         metrics_enabled=data.get("metrics_enabled", True),
         metrics_port=data.get("metrics_port", 9090),
-        user_agent=data.get("user_agent", "MengaoMonitor/1.4"),
+        user_agent=data.get("user_agent", "MengaoMonitor/1.3"),
     )
     
     errors = config.validate()
@@ -351,18 +336,6 @@ def create_sample_config(path: str = "config.sample.json") -> None:
                 "cooldown": 300
             }
         ],
-        "email": {
-            "enabled": False,
-            "smtp_host": "smtp.gmail.com",
-            "smtp_port": 587,
-            "use_tls": True,
-            "username": "alertas@exemplo.com",
-            "password": "sua-senha-aqui",
-            "from_addr": "alertas@exemplo.com",
-            "to_addrs": ["admin@exemplo.com"],
-            "events": ["down", "up"],
-            "cooldown": 300
-        },
         "dashboard": {
             "enabled": True,
             "host": "0.0.0.0",

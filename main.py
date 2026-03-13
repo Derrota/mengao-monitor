@@ -14,12 +14,12 @@ from typing import Optional
 
 import requests
 
-from config import MonitorConfig, load_config, create_sample_config
+from config import MonitorConfig, load_config, create_sample_config, EmailConfig
 from logger import setup_logging, get_logger, get_api_logger, get_webhook_logger, LogContext
 from metrics import PrometheusMetrics, start_metrics_server
 from webhooks import WebhookSender
 from history import UptimeHistory
-from email_alerts import EmailAlertSender
+from email_alerts import EmailAlerter
 
 
 class MengaoMonitor:
@@ -49,7 +49,11 @@ class MengaoMonitor:
             self.history = UptimeHistory(config.history.db_path)
         
         # Email alerts
-        self.email_sender = EmailAlertSender(config.email)
+        self.email_alerter: Optional[EmailAlerter] = None
+        if config.email.enabled:
+            self.email_alerter = EmailAlerter(config.email)
+            if self.email_alerter.enabled:
+                self.logger.info(f"📧 Email alerts enabled → {', '.join(config.email.to_emails)}")
         
         # State
         self.running = False
@@ -147,11 +151,25 @@ class MengaoMonitor:
         except Exception as e:
             self.webhook_logger.failed("configured", event, str(e))
         
-        # Send email alert
-        if self.config.email.enabled:
-            email_sent = self.email_sender.send(result, event, self.logger)
-            if email_sent:
-                self.logger.info(f"Email alert sent for {endpoint_name} ({event})")
+        # Send email alert (only for down/recovery)
+        if self.email_alerter and self.email_alerter.enabled:
+            try:
+                if new_status != "online":
+                    self.email_alerter.send_alert(
+                        api_name=endpoint_name,
+                        url=result.get("url", ""),
+                        error=result.get("error", "Unknown"),
+                        status_code=result.get("status_code")
+                    )
+                elif old_status != "unknown" and old_status != "online":
+                    # Recovery
+                    self.email_alerter.send_recovery(
+                        api_name=endpoint_name,
+                        url=result.get("url", ""),
+                        response_time_ms=result.get("response_time_ms", 0)
+                    )
+            except Exception as e:
+                self.logger.error(f"Email alert failed: {e}")
 
     def run_check_cycle(self) -> None:
         """Run one check cycle for all endpoints."""
@@ -204,7 +222,6 @@ class MengaoMonitor:
         self.logger.info("=" * 60)
         self.logger.info(f"Endpoints: {len([e for e in self.config.endpoints if e.enabled])}")
         self.logger.info(f"Webhooks: {len([w for w in self.config.webhooks if w.enabled])}")
-        self.logger.info(f"Email: {'enabled' if self.config.email.enabled else 'disabled'}")
         self.logger.info(f"Dashboard: {'enabled' if self.config.dashboard.enabled else 'disabled'}")
         self.logger.info(f"History: {'enabled' if self.config.history.enabled else 'disabled'}")
         self.logger.info(f"Metrics: {'enabled' if self.config.metrics_enabled else 'disabled'}")
