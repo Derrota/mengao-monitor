@@ -15,7 +15,6 @@ from auth import auth_manager, require_auth, optional_auth, AuthToken
 from middleware import setup_middleware
 
 app = Flask(__name__)
-system_collector = SystemMetricsCollector()
 
 # Configura middleware (CORS, rate limiting, logging)
 MIDDLEWARE_CONFIG = {
