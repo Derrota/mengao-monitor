@@ -218,7 +218,7 @@ class MengaoMonitor:
         self.running = True
         
         self.logger.info("=" * 60)
-        self.logger.info("🦞 MENGÃO MONITOR v1.3 INICIADO")
+        self.logger.info("🦞 MENGÃO MONITOR v1.5 INICIADO")
         self.logger.info("=" * 60)
         self.logger.info(f"Endpoints: {len([e for e in self.config.endpoints if e.enabled])}")
         self.logger.info(f"Webhooks: {len([w for w in self.config.webhooks if w.enabled])}")
@@ -332,7 +332,7 @@ def create_default_config(path: str = "config.json") -> None:
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="🦞 Mengão Monitor v1.3 - API Monitoring Tool",
+        description="🦞 Mengão Monitor v1.5 - API Monitoring Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

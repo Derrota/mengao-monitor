@@ -16,11 +16,11 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Alertas por email** - Notificações SMTP com HTML templates
 - **Dashboard web** - Interface visual com tema rubro-negro
 - **Métricas Prometheus** - Exportação padrão para integração
+- **Métricas de Sistema** - CPU, memória, disco, rede em tempo real
 - **Histórico SQLite** - Tracking de uptime com estatísticas
 - **Logging estruturado** - JSON para produção, texto para desenvolvimento
 - **Configuração flexível** - JSON ou YAML com validação
 - **Docker ready** - Dockerfile e docker-compose incluídos
-- **Email alerts** - Notificações por SMTP (Gmail, etc.)
 - **CI/CD** - GitHub Actions com testes multi-Python
 
 ## 🚀 Quick Start
@@ -88,10 +88,38 @@ python main.py --log-level DEBUG --log-format text
 
 | Endpoint | Descrição |
 |----------|-----------|
-| `:9090/metrics` | Métricas Prometheus |
+| `:9090/metrics` | Métricas Prometheus (APIs + Sistema) |
 | `:8080/` | Dashboard web |
 | `:8080/apis` | Status JSON das APIs |
 | `:8080/health` | Health check do monitor |
+| `:8080/status` | Status detalhado com métricas de sistema |
+
+## 📈 Métricas de Sistema
+
+O Mengão Monitor agora coleta métricas de sistema automaticamente:
+
+```
+# CPU
+mengao_system_cpu_percent 15.2
+
+# Memória
+mengao_system_memory_percent 45.8
+mengao_system_memory_used_mb 1024.5
+mengao_system_memory_total_mb 2048.0
+
+# Disco
+mengao_system_disk_percent 62.1
+mengao_system_disk_used_gb 120.5
+mengao_system_disk_total_gb 256.0
+
+# Rede
+mengao_system_network_bytes_sent 1024000
+mengao_system_network_bytes_recv 2048000
+
+# Sistema
+mengao_system_process_count 156
+mengao_system_uptime_seconds 86400.5
+```
 
 ## ⚙️ Configuração Completa
 
@@ -156,7 +184,7 @@ python main.py --log-level DEBUG --log-format text
   "log_format": "json",
   "metrics_enabled": true,
   "metrics_port": 9090,
-  "user_agent": "MengaoMonitor/1.4"
+  "user_agent": "MengaoMonitor/1.5"
 }
 ```
 
@@ -213,28 +241,30 @@ pytest test_monitor.py -v
 
 ```
 mengao-monitor/
-├── main.py           # Entry point principal (v1.3)
-├── monitor.py        # Monitor legado (v1.2)
-├── config.py         # Configuração com validação
-├── logger.py         # Logging estruturado
-├── metrics.py        # Métricas Prometheus
-├── webhooks.py       # Notificações multi-plataforma
-├── history.py        # Histórico SQLite
-├── dashboard.py      # Dashboard web
-├── health.py         # Health check endpoint
-├── test_monitor.py   # Testes
-├── requirements.txt  # Dependências
-├── Dockerfile        # Container
+├── main.py              # Entry point principal
+├── monitor.py           # Monitor legado (v1.2)
+├── config.py            # Configuração com validação
+├── logger.py            # Logging estruturado
+├── metrics.py           # Métricas Prometheus (APIs)
+├── system_metrics.py    # Métricas de sistema (CPU, memória, disco)
+├── webhooks.py          # Notificações multi-plataforma
+├── history.py           # Histórico SQLite
+├── dashboard.py         # Dashboard web
+├── health.py            # Health check + métricas de sistema
+├── email_alerts.py      # Alertas por email
+├── test_monitor.py      # Testes
+├── requirements.txt     # Dependências
+├── Dockerfile           # Container
 ├── docker-compose.yml
 └── README.md
 ```
 
 ## 🗺️ Roadmap
 
-- [x] **v1.4**: Alertas por email (SMTP) ✅
-- [ ] **v1.5**: Autenticação no dashboard
-- [ ] **v1.6**: Multi-region checks
-- [ ] **v1.7**: SLA reporting automático
+- [x] **v1.5**: Métricas de sistema (CPU, memória, disco, rede) ✅
+- [ ] **v1.6**: Autenticação no dashboard
+- [ ] **v1.7**: Multi-region checks
+- [ ] **v1.8**: SLA reporting automático
 - [ ] **v2.0**: Interface React + API REST
 
 ## 🤝 Contribuindo

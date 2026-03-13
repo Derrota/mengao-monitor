@@ -8,35 +8,19 @@ import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
-from typing import Optional
-from dataclasses import dataclass
-
-
-@dataclass
-class EmailConfig:
-    """Email configuration."""
-    enabled: bool = False
-    smtp_host: str = "smtp.gmail.com"
-    smtp_port: int = 587
-    use_tls: bool = True
-    username: str = ""
-    password: str = ""
-    from_addr: str = ""
-    to_addrs: list = None
-    events: list = None  # ["down", "up", "error"]
-    cooldown: int = 300  # seconds between alerts for same endpoint
-    
-    def __post_init__(self):
-        if self.to_addrs is None:
-            self.to_addrs = []
-        if self.events is None:
-            self.events = ["down", "up"]
+from typing import Optional, List
 
 
 class EmailAlertSender:
     """Send email alerts for endpoint status changes."""
     
-    def __init__(self, config: EmailConfig):
+    def __init__(self, config):
+        """
+        Initialize with EmailConfig from config.py.
+        
+        Args:
+            config: EmailConfig dataclass instance
+        """
         self.config = config
         self.last_alert: dict = {}  # {endpoint_name: timestamp}
     
@@ -197,8 +181,8 @@ Uma vez Flamengo, sempre Flamengo! 🔴⚫
             # Create message
             msg = MIMEMultipart("alternative")
             msg["Subject"] = f"🦞 Mengão Monitor: {result.get('name', 'Unknown')} is {event.upper()}"
-            msg["From"] = self.config.from_addr
-            msg["To"] = ", ".join(self.config.to_addrs)
+            msg["From"] = self.config.from_email
+            msg["To"] = ", ".join(self.config.to_emails)
             
             # Attach plain text and HTML
             plain_body = self._create_plain_body(result, event)
@@ -215,8 +199,8 @@ Uma vez Flamengo, sempre Flamengo! 🔴⚫
                     server.starttls(context=context)
                 server.login(self.config.username, self.config.password)
                 server.sendmail(
-                    self.config.from_addr,
-                    self.config.to_addrs,
+                    self.config.from_email,
+                    self.config.to_emails,
                     msg.as_string()
                 )
             
@@ -233,7 +217,7 @@ Uma vez Flamengo, sempre Flamengo! 🔴⚫
                 logger.error(f"Failed to send email alert: {e}")
             return False
     
-    def test_connection(self) -> tuple[bool, str]:
+    def test_connection(self) -> tuple:
         """
         Test SMTP connection.
         

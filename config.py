@@ -116,16 +116,26 @@ class EmailConfig:
     from_email: str = ""
     to_emails: List[str] = field(default_factory=list)
     use_tls: bool = True
+    events: List[str] = field(default_factory=lambda: ["down", "up"])
+    cooldown: int = 300  # seconds between alerts for same endpoint
 
     def validate(self) -> List[str]:
         errors = []
         if self.enabled:
+            if not self.smtp_host:
+                errors.append("SMTP host is required when email is enabled")
+            if self.smtp_port < 1 or self.smtp_port > 65535:
+                errors.append(f"Invalid SMTP port: {self.smtp_port}")
             if not self.username:
                 errors.append("Email username is required")
             if not self.password:
                 errors.append("Email password is required")
+            if not self.from_email:
+                errors.append("From email address is required")
             if not self.to_emails:
                 errors.append("At least one recipient email is required")
+            if self.cooldown < 0:
+                errors.append("Cooldown cannot be negative")
         return errors
 
 
@@ -143,7 +153,7 @@ class MonitorConfig:
     log_format: str = "json"  # json, text
     metrics_enabled: bool = True
     metrics_port: int = 9090
-    user_agent: str = "MengaoMonitor/1.3"
+    user_agent: str = "MengaoMonitor/1.5"
 
     def validate(self) -> List[str]:
         """Validate entire configuration."""
@@ -228,6 +238,8 @@ def _parse_email(data: Dict[str, Any]) -> EmailConfig:
         from_email=data.get("from_email", ""),
         to_emails=data.get("to_emails", []),
         use_tls=data.get("use_tls", True),
+        events=data.get("events", ["down", "up"]),
+        cooldown=data.get("cooldown", 300),
     )
 
 

@@ -1,15 +1,17 @@
 """
-Health Check + Dashboard para Mengão Monitor v1.2 🦞
+Health Check + Dashboard para Mengão Monitor v1.5 🦞
+System metrics, API status, and dashboard.
 """
 
 from flask import Flask, jsonify, Response
-import psutil
 import os
 from datetime import datetime
 
 from dashboard import render_dashboard
+from system_metrics import SystemMetricsCollector
 
 app = Flask(__name__)
+system_collector = SystemMetricsCollector()
 
 # Estado global do monitor (será injetado)
 monitor_state = {
@@ -35,7 +37,7 @@ def health():
     return jsonify({
         'status': 'healthy',
         'service': 'mengao-monitor',
-        'version': '1.2.0',
+        'version': '1.5.0',
         'timestamp': datetime.now().isoformat()
     })
 
@@ -43,12 +45,15 @@ def health():
 @app.route('/status')
 def status():
     """Status detalhado do monitor."""
-    process = psutil.Process(os.getpid())
+    # Collect system metrics
+    system_metrics = system_collector.collect()
+    system_dict = system_collector.to_dict(system_metrics)
+    
     started = monitor_state.get('started_at')
     
     return jsonify({
         'service': 'mengao-monitor',
-        'version': '1.2.0',
+        'version': '1.5.0',
         'status': 'running',
         'uptime_seconds': (datetime.now() - started).total_seconds() if started else 0,
         'last_check': monitor_state.get('last_check'),
@@ -56,8 +61,7 @@ def status():
         'apis_monitored': monitor_state.get('apis_monitored', 0),
         'errors_count': monitor_state.get('errors_count', 0),
         'apis': monitor_state.get('apis', []),
-        'memory_mb': round(process.memory_info().rss / 1024 / 1024, 2),
-        'cpu_percent': process.cpu_percent(),
+        'system': system_dict,
         'pid': os.getpid()
     })
 
@@ -65,7 +69,12 @@ def status():
 @app.route('/metrics')
 def metrics():
     """Endpoint de métricas no formato Prometheus."""
-    lines = [
+    # Collect system metrics
+    system_metrics = system_collector.collect()
+    system_lines = system_collector.to_prometheus(system_metrics).split('\n')
+    
+    # API metrics
+    api_lines = [
         '# HELP mengao_monitor_checks_total Total de verificacoes realizadas',
         '# TYPE mengao_monitor_checks_total counter',
         f'mengao_monitor_checks_total {monitor_state.get("checks_count", 0)}',
@@ -79,11 +88,11 @@ def metrics():
         f'mengao_monitor_apis_total {monitor_state.get("apis_monitored", 0)}',
     ]
     
-    # Adiciona métricas por API
+    # Add per-API metrics
     for api in monitor_state.get('apis', []):
         name = api.get('name', 'unknown').replace(' ', '_').lower()
         status_val = 1 if api.get('status') == 'online' else 0
-        lines.extend([
+        api_lines.extend([
             '',
             f'# HELP mengao_monitor_api_status Status da API (1=online, 0=offline)',
             f'# TYPE mengao_monitor_api_status gauge',
@@ -91,13 +100,16 @@ def metrics():
         ])
         
         if api.get('response_time'):
-            lines.extend([
+            api_lines.extend([
                 f'# HELP mengao_monitor_api_response_time Tempo de resposta em segundos',
                 f'# TYPE mengao_monitor_api_response_time gauge',
                 f'mengao_monitor_api_response_time{{api="{name}"}} {api["response_time"]}',
             ])
     
-    return '\n'.join(lines), 200, {'Content-Type': 'text/plain'}
+    # Combine all metrics
+    all_lines = api_lines + [''] + system_lines
+    
+    return '\n'.join(all_lines), 200, {'Content-Type': 'text/plain'}
 
 
 @app.route('/apis')
