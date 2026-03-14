@@ -3,7 +3,8 @@ Health Check + Dashboard v2 para Mengão Monitor 🦞
 System metrics, API status, webhook stats, and dashboard with Chart.js.
 v2.1: Token-based authentication
 v2.3: Middleware (CORS, rate limiting, request logging)
-v2.4: Circuit Breaker pattern para endpoints (novo)
+v2.4: Circuit Breaker pattern para endpoints
+v2.7: Meta-Monitoring (self-diagnostics, watchdog) 🆕
 """
 
 from flask import Flask, jsonify, Response, request
@@ -16,6 +17,8 @@ from auth import auth_manager, require_auth, optional_auth, AuthToken
 from middleware import setup_middleware
 from circuit_breaker import get_circuit_manager, CircuitBreakerConfig
 from plugins import PluginManager
+from health_checks import HealthCheckManager
+from meta_monitor import get_meta_monitor
 
 app = Flask(__name__)
 
@@ -562,3 +565,101 @@ def health_checks_history():
 def get_health_check_manager():
     """Retorna o health check manager para uso externo."""
     return health_check_manager
+
+
+# ===== META-MONITORING ENDPOINTS (v2.7) =====
+
+meta_monitor = get_meta_monitor()
+
+
+@app.route('/meta')
+@optional_auth
+def meta_status():
+    """Status geral do meta-monitor (saúde do próprio processo)."""
+    return jsonify(meta_monitor.get_overall_status())
+
+
+@app.route('/meta/checks')
+@optional_auth
+def meta_checks():
+    """Executa todos os health checks do meta-monitor."""
+    checks = meta_monitor.run_all_checks()
+    return jsonify({
+        'checks': {name: check.to_dict() for name, check in checks.items()},
+        'timestamp': datetime.now().isoformat()
+    })
+
+
+@app.route('/meta/history')
+@optional_auth
+def meta_history():
+    """Histórico de health checks do meta-monitor."""
+    limit = request.args.get('limit', 100, type=int)
+    status_filter = request.args.get('status')
+    
+    return jsonify({
+        'history': meta_monitor.get_history(limit=limit, status_filter=status_filter),
+        'count': len(meta_monitor.checks_history)
+    })
+
+
+@app.route('/meta/stats')
+@optional_auth
+def meta_stats():
+    """Estatísticas do meta-monitor."""
+    return jsonify(meta_monitor.get_stats())
+
+
+@app.route('/meta/thresholds', methods=['GET'])
+@optional_auth
+def meta_thresholds_get():
+    """Retorna thresholds configurados."""
+    return jsonify({
+        'thresholds': meta_monitor.thresholds,
+        'timestamp': datetime.now().isoformat()
+    })
+
+
+@app.route('/meta/thresholds', methods=['PUT'])
+@require_auth(scope='admin')
+def meta_thresholds_update():
+    """Atualiza thresholds do meta-monitor (requer admin)."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Missing JSON body'}), 400
+    
+    updated = []
+    for key, value in data.items():
+        if key in meta_monitor.thresholds:
+            meta_monitor.thresholds[key] = value
+            updated.append(key)
+    
+    return jsonify({
+        'message': f'Updated {len(updated)} thresholds',
+        'updated': updated,
+        'thresholds': meta_monitor.thresholds
+    })
+
+
+@app.route('/meta/watchdog/start', methods=['POST'])
+@require_auth(scope='admin')
+def meta_watchdog_start():
+    """Inicia watchdog do meta-monitor (requer admin)."""
+    meta_monitor.start_watchdog()
+    return jsonify({
+        'message': 'Watchdog started',
+        'interval': meta_monitor.check_interval
+    })
+
+
+@app.route('/meta/watchdog/stop', methods=['POST'])
+@require_auth(scope='admin')
+def meta_watchdog_stop():
+    """Para watchdog do meta-monitor (requer admin)."""
+    meta_monitor.stop_watchdog()
+    return jsonify({'message': 'Watchdog stopped'})
+
+
+def get_meta_monitor_instance():
+    """Retorna instância do meta-monitor para uso externo."""
+    return meta_monitor

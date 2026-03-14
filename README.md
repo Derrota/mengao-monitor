@@ -30,6 +30,7 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Circuit Breaker** - Proteção contra endpoints instáveis (v2.4) 🆕
 - **Plugin System** - Arquitetura extensível para customizacoes (v2.5) 🆕
 - **Health Checks Avançados** - DNS, SSL, TCP, HTTP headers, SLO, JSON validation (v2.6) 🆕
+- **Meta-Monitoring** - Self-diagnostics, watchdog, process health (v2.7) 🆕
 
 ## 🚀 Quick Start
 
@@ -657,6 +658,7 @@ mengao-monitor/
 - [x] **v2.4**: Circuit Breaker pattern para endpoints ✅
 - [x] **v2.5**: Plugin System (extensibilidade) ✅
 - [x] **v2.6**: Health Checks Avançados (DNS, SSL, TCP, SLO, JSON) ✅
+- [x] **v2.7**: Meta-Monitoring (self-diagnostics, watchdog) ✅
 - [ ] **v2.7**: Multi-region checks
 - [ ] **v2.7**: SLA reporting automático
 - [ ] **v2.8**: Interface React + WebSocket
@@ -784,3 +786,84 @@ curl http://localhost:8080/health-checks/history?name=dns_example&limit=50
 ```
 
 **Testes:** 25 test cases cobrindo todos os tipos de check.
+
+## 🦞 Meta-Monitoring (v2.7) 🆕
+
+Monitora a saúde do próprio Mengão Monitor — garantindo que o monitor está saudável:
+
+**Health Checks:**
+- **Process Health** - CPU, memória, threads, arquivos abertos
+- **Thread Health** - Status de todas as threads ativas
+- **Memory Health** - Detalhes de uso de memória (RSS, VMS, USS, PSS)
+- **Uptime Health** - Tempo de atividade e estabilidade
+
+**Thresholds Configuráveis:**
+```python
+thresholds = {
+    'cpu_percent': 80.0,      # Alerta se CPU > 80%
+    'memory_percent': 90.0,   # Alerta se memória > 90%
+    'memory_mb': 500.0,       # Alerta se > 500MB
+    'threads': 50,            # Alerta se > 50 threads
+    'open_files': 100,        # Alerta se > 100 arquivos abertos
+    'response_time_ms': 1000, # Alerta se response time > 1s
+}
+```
+
+**Endpoints de Gerenciamento:**
+```bash
+# Status geral do meta-monitor
+curl http://localhost:8080/meta
+
+# Executar todos os health checks
+curl http://localhost:8080/meta/checks
+
+# Histórico de health checks
+curl http://localhost:8080/meta/history?limit=100&status=healthy
+
+# Estatísticas
+curl http://localhost:8080/meta/stats
+
+# Thresholds (GET/PUT)
+curl http://localhost:8080/meta/thresholds
+curl -X PUT http://localhost:8080/meta/thresholds \
+  -H "Content-Type: application/json" \
+  -d '{"cpu_percent": 70.0, "memory_mb": 400.0}'
+
+# Watchdog (start/stop)
+curl -X POST http://localhost:8080/meta/watchdog/start
+curl -X POST http://localhost:8080/meta/watchdog/stop
+```
+
+**Status Response:**
+```json
+{
+  "overall_status": "healthy",
+  "checks": {
+    "process": {
+      "name": "process_health",
+      "status": "healthy",
+      "message": "Processo saudável",
+      "details": {
+        "pid": 1234,
+        "cpu_percent": 15.5,
+        "memory_mb": 120.3,
+        "memory_percent": 5.2,
+        "threads": 12,
+        "open_files": 25,
+        "connections": 8,
+        "uptime_seconds": 86400.5
+      },
+      "duration_ms": 12.34
+    },
+    "threads": { ... },
+    "memory": { ... },
+    "uptime": { ... }
+  },
+  "timestamp": "2026-03-14T01:40:00",
+  "history_size": 142
+}
+```
+
+**Watchdog:** Thread daemon que executa health checks periodicamente (padrão: 30s).
+
+**Testes:** 20+ test cases cobrindo todos os health checks e funcionalidades.
