@@ -1145,3 +1145,189 @@ def notification_rules_add():
     
     manager.add_rule(rule)
     return jsonify({'message': f'Rule added: {data["name"]}'})
+
+
+# ============================================================
+# Alert Escalation Endpoints (v3.2) 🆕
+# ============================================================
+
+@app.route('/escalation/policies')
+@require_auth(scope='read')
+def escalation_policies():
+    """Lista políticas de escalação."""
+    from alert_escalation import get_escalation_manager
+    manager = get_escalation_manager()
+    
+    return jsonify({
+        'policies': {
+            endpoint: {
+                'name': p.name,
+                'enabled': p.enabled,
+                'l1_timeout': p.l1_timeout,
+                'l2_timeout': p.l2_timeout,
+                'l3_timeout': p.l3_timeout,
+                'l1_channels': p.l1_channels,
+                'l2_channels': p.l2_channels,
+                'l3_channels': p.l3_channels,
+                'max_escalations_per_hour': p.max_escalations_per_hour,
+                'quiet_hours': {
+                    'start': p.quiet_hours_start,
+                    'end': p.quiet_hours_end,
+                    'escalate_anyway': p.quiet_hours_escalate_anyway
+                } if p.quiet_hours_start is not None else None
+            }
+            for endpoint, p in manager.policies.items()
+        }
+    })
+
+
+@app.route('/escalation/policies', methods=['POST'])
+@require_auth(scope='admin')
+def escalation_policies_add():
+    """Adiciona política de escalação."""
+    from alert_escalation import get_escalation_manager, EscalationPolicy
+    manager = get_escalation_manager()
+    
+    data = request.get_json()
+    if not data or 'endpoint' not in data:
+        return jsonify({'error': 'Missing endpoint'}), 400
+    
+    policy = EscalationPolicy(
+        name=data.get('name', data['endpoint']),
+        endpoint=data['endpoint'],
+        enabled=data.get('enabled', True),
+        l1_timeout=data.get('l1_timeout', 300),
+        l2_timeout=data.get('l2_timeout', 900),
+        l3_timeout=data.get('l3_timeout', 1800),
+        l1_channels=data.get('l1_channels', ['websocket']),
+        l2_channels=data.get('l2_channels', ['websocket', 'discord']),
+        l3_channels=data.get('l3_channels', ['websocket', 'discord', 'telegram']),
+        max_escalations_per_hour=data.get('max_escalations_per_hour', 5),
+        quiet_hours_start=data.get('quiet_hours_start'),
+        quiet_hours_end=data.get('quiet_hours_end'),
+        quiet_hours_escalate_anyway=data.get('quiet_hours_escalate_anyway', False)
+    )
+    
+    manager.add_policy(policy)
+    return jsonify({'message': f'Policy added: {policy.name}'})
+
+
+@app.route('/escalation/policies/<endpoint>', methods=['DELETE'])
+@require_auth(scope='admin')
+def escalation_policies_remove(endpoint):
+    """Remove política de escalação."""
+    from alert_escalation import get_escalation_manager
+    manager = get_escalation_manager()
+    
+    manager.remove_policy(endpoint)
+    return jsonify({'message': f'Policy removed: {endpoint}'})
+
+
+@app.route('/escalation/alerts')
+@require_auth(scope='read')
+def escalation_alerts():
+    """Lista alertas ativos em escalação."""
+    from alert_escalation import get_escalation_manager
+    manager = get_escalation_manager()
+    
+    endpoint_filter = request.args.get('endpoint')
+    alerts = manager.get_active_alerts(endpoint_filter)
+    
+    return jsonify({
+        'alerts': [{
+            'id': a.id,
+            'endpoint': a.endpoint,
+            'message': a.message,
+            'priority': a.priority,
+            'current_level': a.current_level.value,
+            'status': a.status.value,
+            'created_at': a.created_at.isoformat(),
+            'time_active': a.time_active,
+            'time_in_current_level': a.time_in_current_level,
+            'escalation_count': a.escalation_count,
+            'acknowledged_by': a.acknowledged_by,
+            'events': [{
+                'id': e.id,
+                'from_level': e.from_level.value,
+                'to_level': e.to_level.value,
+                'timestamp': e.timestamp.isoformat(),
+                'reason': e.reason,
+                'notified_channels': e.notified_channels
+            } for e in a.events]
+        } for a in alerts]
+    })
+
+
+@app.route('/escalation/alerts/<alert_id>')
+@require_auth(scope='read')
+def escalation_alert_detail(alert_id):
+    """Detalhe de um alerta em escalação."""
+    from alert_escalation import get_escalation_manager
+    manager = get_escalation_manager()
+    
+    alert = manager.get_alert(alert_id)
+    if not alert:
+        return jsonify({'error': 'Alert not found'}), 404
+    
+    return jsonify({
+        'id': alert.id,
+        'endpoint': alert.endpoint,
+        'message': alert.message,
+        'priority': alert.priority,
+        'current_level': alert.current_level.value,
+        'status': alert.status.value,
+        'created_at': alert.created_at.isoformat(),
+        'time_active': alert.time_active,
+        'time_in_current_level': alert.time_in_current_level,
+        'escalation_count': alert.escalation_count,
+        'acknowledged_at': alert.acknowledged_at.isoformat() if alert.acknowledged_at else None,
+        'acknowledged_by': alert.acknowledged_by,
+        'events': [{
+            'id': e.id,
+            'from_level': e.from_level.value,
+            'to_level': e.to_level.value,
+            'timestamp': e.timestamp.isoformat(),
+            'reason': e.reason,
+            'notified_channels': e.notified_channels
+        } for e in alert.events]
+    })
+
+
+@app.route('/escalation/alerts/<alert_id>/acknowledge', methods=['POST'])
+@require_auth(scope='write')
+def escalation_alert_acknowledge(alert_id):
+    """Reconhece um alerta (para escalação)."""
+    from alert_escalation import get_escalation_manager
+    manager = get_escalation_manager()
+    
+    data = request.get_json() or {}
+    acknowledged_by = data.get('acknowledged_by', 'api')
+    
+    if manager.acknowledge_alert(alert_id, acknowledged_by):
+        return jsonify({'message': f'Alert {alert_id} acknowledged'})
+    return jsonify({'error': 'Alert not found or already resolved'}), 404
+
+
+@app.route('/escalation/alerts/<alert_id>/resolve', methods=['POST'])
+@require_auth(scope='write')
+def escalation_alert_resolve(alert_id):
+    """Resolve um alerta em escalação."""
+    from alert_escalation import get_escalation_manager
+    manager = get_escalation_manager()
+    
+    data = request.get_json() or {}
+    reason = data.get('reason', 'Resolved via API')
+    
+    if manager.resolve_alert(alert_id, reason):
+        return jsonify({'message': f'Alert {alert_id} resolved'})
+    return jsonify({'error': 'Alert not found'}), 404
+
+
+@app.route('/escalation/stats')
+@require_auth(scope='read')
+def escalation_stats():
+    """Estatísticas do sistema de escalação."""
+    from alert_escalation import get_escalation_manager
+    manager = get_escalation_manager()
+    
+    return jsonify(manager.get_stats())

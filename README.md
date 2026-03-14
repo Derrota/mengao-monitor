@@ -35,6 +35,7 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **SLA Reporting** - Relatórios automáticos com uptime, MTTR, incidents (v2.9) 🆕
 - **WebSocket** - Updates em tempo real para dashboard (v3.0) 🆕
 - **Notification Manager** - Sistema unificado de notificações (v3.1) 🆕
+- **Alert Escalation** - Escalação automática L1→L2→L3 com políticas (v3.2) 🆕
 
 ## 🚀 Quick Start
 
@@ -659,6 +660,8 @@ mengao-monitor/
 ├── test_websocket.py      # Testes v3.0 (19 test cases) 🆕
 ├── notification_manager.py  # Notification Manager v3.1 (sistema unificado) 🆕
 ├── test_notification_manager.py # Testes v3.1 (25 test cases) 🆕
+├── alert_escalation.py      # Alert Escalation v3.2 (escalação automática) 🆕
+├── test_alert_escalation.py # Testes v3.2 (27 test cases) 🆕
 │   └── example_plugins.py # SSL, SLO, Console, File, JSON, Lifecycle
 ├── requirements.txt     # Dependências
 ├── Dockerfile           # Container
@@ -681,6 +684,8 @@ mengao-monitor/
 - [x] **v2.8**: Config Watcher API (hot-reload management) ✅
 - [x] **v2.9**: SLA Reporting automático (JSON/CSV/HTML, incidents, MTTR) ✅ 🆕
 - [x] **v3.0**: WebSocket para updates em tempo real ✅ 🆕
+- [x] **v3.1**: Notification Manager (sistema unificado) ✅ 🆕
+- [x] **v3.2**: Alert Escalation (escalação automática L1→L2→L3) ✅ 🆕
 
 ## 🤝 Contribuindo
 
@@ -1242,3 +1247,106 @@ curl -X POST http://localhost:8080/config/watcher/stop
 ```
 
 **Testes:** 18 test cases (ConfigWatcher + ConfigDiff).
+
+## 🚨 Alert Escalation (v3.2) 🆕
+
+Sistema de escalação automática de alertas por níveis (L1 → L2 → L3) com políticas configuráveis:
+
+**Níveis de Escalação:**
+- **L1** (Primeiro contato) - Webhook padrão, WebSocket
+- **L2** (Escalação) - Múltiplos canais (Discord, Slack)
+- **L3** (Crítico) - Todos os canais + on-call (Telegram, Email)
+
+**Endpoints:**
+```bash
+# Listar políticas de escalação
+curl http://localhost:8080/escalation/policies
+
+# Adicionar política (requer auth admin)
+curl -X POST http://localhost:8080/escalation/policies \
+  -H "Authorization: Bearer mm_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Critical API",
+    "endpoint": "api.prod.com",
+    "l1_timeout": 300,
+    "l2_timeout": 900,
+    "l3_timeout": 1800,
+    "l1_channels": ["websocket"],
+    "l2_channels": ["websocket", "discord"],
+    "l3_channels": ["websocket", "discord", "telegram"],
+    "max_escalations_per_hour": 5
+  }'
+
+# Remover política
+curl -X DELETE http://localhost:8080/escalation/policies/api.prod.com
+
+# Listar alertas ativos
+curl http://localhost:8080/escalation/alerts
+
+# Detalhe de um alerta
+curl http://localhost:8080/escalation/alerts/abc123
+
+# Reconhecer alerta (para escalação)
+curl -X POST http://localhost:8080/escalation/alerts/abc123/acknowledge \
+  -H "Authorization: Bearer mm_token" \
+  -d '{"acknowledged_by": "admin"}'
+
+# Resolver alerta
+curl -X POST http://localhost:8080/escalation/alerts/abc123/resolve \
+  -H "Authorization: Bearer mm_token" \
+  -d '{"reason": "Fixed"}'
+
+# Estatísticas
+curl http://localhost:8080/escalation/stats
+```
+
+**Política de Escalação:**
+```json
+{
+  "name": "Production API",
+  "endpoint": "api.prod.com",
+  "enabled": true,
+  "l1_timeout": 300,      // 5 min → L2
+  "l2_timeout": 900,      // 15 min → L3
+  "l3_timeout": 1800,     // 30 min → expira
+  "l1_channels": ["websocket"],
+  "l2_channels": ["websocket", "discord"],
+  "l3_channels": ["websocket", "discord", "telegram"],
+  "max_escalations_per_hour": 5,
+  "quiet_hours_start": 22,
+  "quiet_hours_end": 6,
+  "quiet_hours_escalate_anyway": false
+}
+```
+
+**Fluxo de Escalação:**
+```
+Alerta criado (L1)
+  ↓ (5 min sem acknowledge)
+Escalação (L2) → Discord
+  ↓ (15 min sem acknowledge)
+Escalação (L3) → Telegram + on-call
+  ↓ (30 min sem resolução)
+Expira → Histórico
+```
+
+**Estados do Alerta:**
+- **active** - L1, aguardando ação
+- **escalated** - L2 ou L3, notificações enviadas
+- **acknowledged** - Alguém reconheceu (para escalação)
+- **resolved** - Problema resolvido
+- **expired** - Timeout máximo atingido
+
+**Reconhecimento (Acknowledge):**
+Quando um alerta é reconhecido, ele para de escalar. Isso permite que a equipe responda sem pressão de escalação automática.
+
+**Rate Limiting:**
+- Máximo de N escalações por hora por endpoint
+- Previne flood de notificações em falhas intermitentes
+
+**Horário Silencioso:**
+- Configure quiet hours (ex: 22h-6h)
+- L3 sempre escala mesmo em quiet hours (opcional)
+
+**Testes:** 27 test cases cobrindo políticas, escalação, acknowledge, resolve, rate limiting e edge cases.
