@@ -779,3 +779,145 @@ def record_config_diff(old_config: dict, new_config: dict):
     # Manter apenas últimos N diffs
     if len(config_diff_history) > max_diff_history:
         config_diff_history = config_diff_history[-max_diff_history:]
+
+
+# ===== SLA REPORTER ENDPOINTS (v2.9) 🆕
+
+from sla_reporter import SLAReporter
+
+sla_reporter = SLAReporter()
+
+
+@app.route('/sla/report/<endpoint_name>')
+@optional_auth
+def sla_report_endpoint(endpoint_name):
+    """Gera relatório de SLA para um endpoint específico."""
+    period_hours = request.args.get('period', 24, type=int)
+    format_type = request.args.get('format', 'json')
+    
+    report = sla_reporter.generate_report(endpoint_name, period_hours=period_hours)
+    
+    if format_type == 'html':
+        html = sla_reporter.export_html(report)
+        return Response(html, mimetype='text/html')
+    elif format_type == 'csv':
+        csv_data = sla_reporter.export_csv(report)
+        return Response(csv_data, mimetype='text/csv')
+    else:
+        return jsonify(asdict(report))
+
+
+@app.route('/sla/reports')
+@optional_auth
+def sla_reports_all():
+    """Gera relatório de SLA para todos os endpoints monitorados."""
+    period_hours = request.args.get('period', 24, type=int)
+    
+    # Obter lista de endpoints do monitor
+    endpoints = [api.get('name') for api in monitor_state.get('apis', []) if api.get('name')]
+    
+    if not endpoints:
+        return jsonify({'error': 'No endpoints monitored'}), 404
+    
+    reports = {}
+    for name in endpoints:
+        reports[name] = asdict(sla_reporter.generate_report(name, period_hours=period_hours))
+    
+    return jsonify({
+        'reports': reports,
+        'period_hours': period_hours,
+        'timestamp': datetime.now().isoformat()
+    })
+
+
+@app.route('/sla/incidents')
+@optional_auth
+def sla_incidents():
+    """Lista incidentes de SLA."""
+    endpoint_name = request.args.get('endpoint')
+    open_only = request.args.get('open', 'false').lower() == 'true'
+    
+    if open_only:
+        incidents = sla_reporter.get_open_incidents(endpoint_name)
+    else:
+        incidents = []
+        endpoints = [endpoint_name] if endpoint_name else sla_reporter._incidents.keys()
+        for name in endpoints:
+            incidents.extend(sla_reporter._incidents.get(name, []))
+    
+    return jsonify({
+        'incidents': [asdict(i) for i in incidents],
+        'count': len(incidents)
+    })
+
+
+@app.route('/sla/incidents', methods=['POST'])
+@require_auth(scope='write')
+def sla_record_incident():
+    """Registra um novo incidente de SLA."""
+    data = request.get_json()
+    if not data or 'endpoint_name' not in data:
+        return jsonify({'error': 'Missing endpoint_name'}), 400
+    
+    incident = sla_reporter.record_incident(
+        endpoint_name=data['endpoint_name'],
+        reason=data.get('reason', '')
+    )
+    
+    return jsonify({
+        'message': 'Incident recorded',
+        'incident': asdict(incident)
+    }), 201
+
+
+@app.route('/sla/incidents/<endpoint_name>/resolve', methods=['POST'])
+@require_auth(scope='write')
+def sla_resolve_incident(endpoint_name):
+    """Resolve o último incidente aberto de um endpoint."""
+    incident = sla_reporter.resolve_incident(endpoint_name)
+    
+    if not incident:
+        return jsonify({'error': 'No open incidents found'}), 404
+    
+    return jsonify({
+        'message': 'Incident resolved',
+        'incident': asdict(incident)
+    })
+
+
+@app.route('/sla/targets', methods=['GET'])
+@optional_auth
+def sla_targets_get():
+    """Retorna targets de SLA configurados."""
+    return jsonify({
+        'targets': sla_reporter._sla_targets,
+        'default': sla_reporter._default_sla_target
+    })
+
+
+@app.route('/sla/targets', methods=['PUT'])
+@require_auth(scope='admin')
+def sla_targets_update():
+    """Atualiza target de SLA para um endpoint."""
+    data = request.get_json()
+    if not data or 'endpoint_name' not in data or 'target' not in data:
+        return jsonify({'error': 'Missing endpoint_name or target'}), 400
+    
+    sla_reporter.set_sla_target(data['endpoint_name'], data['target'])
+    
+    return jsonify({
+        'message': f'SLA target updated for {data["endpoint_name"]}',
+        'target': data['target']
+    })
+
+
+@app.route('/sla/stats')
+@optional_auth
+def sla_stats():
+    """Estatísticas do SLA reporter."""
+    return jsonify(sla_reporter.get_stats())
+
+
+def get_sla_reporter():
+    """Retorna instância do SLA reporter para uso externo."""
+    return sla_reporter

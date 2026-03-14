@@ -32,6 +32,7 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Health Checks Avançados** - DNS, SSL, TCP, HTTP headers, SLO, JSON validation (v2.6) 🆕
 - **Meta-Monitoring** - Self-diagnostics, watchdog, process health (v2.7) 🆕
 - **Config Watcher** - Hot-reload management via API (v2.8) 🆕
+- **SLA Reporting** - Relatórios automáticos com uptime, MTTR, incidents (v2.9) 🆕
 
 ## 🚀 Quick Start
 
@@ -650,6 +651,8 @@ mengao-monitor/
 ├── meta_monitor.py      # Meta-Monitoring v2.7 (self-diagnostics) 🆕
 ├── test_meta_monitor.py # Testes v2.7 (20 test cases) 🆕
 ├── test_config_watcher.py # Testes v2.8 (18 test cases) 🆕
+├── sla_reporter.py        # SLA Reporting v2.9 (relatórios automáticos) 🆕
+├── test_sla_reporter.py   # Testes v2.9 (25 test cases) 🆕
 │   └── example_plugins.py # SSL, SLO, Console, File, JSON, Lifecycle
 ├── requirements.txt     # Dependências
 ├── Dockerfile           # Container
@@ -670,8 +673,7 @@ mengao-monitor/
 - [x] **v2.6**: Health Checks Avançados (DNS, SSL, TCP, SLO, JSON) ✅
 - [x] **v2.7**: Meta-Monitoring (self-diagnostics, watchdog) ✅
 - [x] **v2.8**: Config Watcher API (hot-reload management) ✅
-- [ ] **v2.9**: Multi-region checks
-- [ ] **v2.9**: SLA reporting automático
+- [x] **v2.9**: SLA Reporting automático (JSON/CSV/HTML, incidents, MTTR) ✅ 🆕
 - [ ] **v3.0**: Interface React + WebSocket
 
 ## 🤝 Contribuindo
@@ -878,6 +880,55 @@ curl -X POST http://localhost:8080/meta/watchdog/stop
 **Watchdog:** Thread daemon que executa health checks periodicamente (padrão: 30s).
 
 **Testes:** 20+ test cases cobrindo todos os health checks e funcionalidades.
+
+## 📊 SLA Reporting (v2.9) 🆕
+
+Relatórios automáticos de SLA com uptime, response time, incidents e MTTR:
+
+**Endpoints:**
+```bash
+# Relatório de SLA para um endpoint (JSON)
+curl http://localhost:8080/sla/report/api_prod?period=24
+
+# Relatório em HTML (dashboard)
+curl http://localhost:8080/sla/report/api_prod?format=html
+
+# Relatório em CSV
+curl http://localhost:8080/sla/report/api_prod?format=csv
+
+# Relatório para todos os endpoints
+curl http://localhost:8080/sla/reports?period=168
+
+# Listar incidentes abertos
+curl http://localhost:8080/sla/incidents?open=true
+
+# Registrar incidente
+curl -X POST http://localhost:8080/sla/incidents \
+  -H "Content-Type: application/json" \
+  -d '{"endpoint_name": "api_prod", "reason": "timeout"}'
+
+# Resolver incidente
+curl -X POST http://localhost:8080/sla/incidents/api_prod/resolve
+
+# Configurar target de SLA
+curl -X PUT http://localhost:8080/sla/targets \
+  -H "Content-Type: application/json" \
+  -d '{"endpoint_name": "api_prod", "target": 99.99}'
+```
+
+**Métricas de SLA:**
+- **Uptime %** - Percentual de disponibilidade
+- **Response Time** - Avg, P95, P99, Min, Max
+- **Incidents** - Contagem e duração total
+- **MTTR** - Mean Time To Recovery
+- **SLA Breaches** - Janelas de 1h abaixo do target
+
+**Export Formats:**
+- **JSON** - Para integração com APIs
+- **HTML** - Dashboard visual com status badges
+- **CSV** - Para planilhas e análises
+
+**Testes:** 25 test cases cobrindo métricas, incidentes, exports e thread safety.
 
 ## ⚙️ Config Watcher (v2.8) 🆕
 
