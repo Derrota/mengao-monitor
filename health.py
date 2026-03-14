@@ -6,6 +6,7 @@ v2.3: Middleware (CORS, rate limiting, request logging)
 v2.4: Circuit Breaker pattern para endpoints
 v2.7: Meta-Monitoring (self-diagnostics, watchdog)
 v2.8: Config Watcher endpoints (hot-reload management) 🆕
+v3.0: WebSocket para updates em tempo real 🆕
 """
 
 from flask import Flask, jsonify, Response, request
@@ -22,6 +23,11 @@ from plugins import PluginManager
 from health_checks import HealthCheckManager
 from meta_monitor import get_meta_monitor
 from config_watcher import ConfigWatcher, ConfigDiff
+from websocket_server import (
+    get_websocket_server, start_websocket_server, stop_websocket_server,
+    broadcast_status_update, broadcast_metrics_update, broadcast_alert,
+    broadcast_health_check, broadcast_sla_update
+)
 
 app = Flask(__name__)
 
@@ -921,3 +927,85 @@ def sla_stats():
 def get_sla_reporter():
     """Retorna instância do SLA reporter para uso externo."""
     return sla_reporter
+
+
+# ===== WEBSOCKET ENDPOINTS (v3.0) 🆕
+
+@app.route('/websocket/status')
+@optional_auth
+def websocket_status():
+    """Status do servidor WebSocket."""
+    server = get_websocket_server()
+    return jsonify({
+        'websocket': server.get_stats(),
+        'timestamp': datetime.now().isoformat()
+    })
+
+
+@app.route('/websocket/start', methods=['POST'])
+@require_auth(scope='admin')
+def websocket_start():
+    """Inicia servidor WebSocket (requer admin)."""
+    try:
+        data = request.get_json() or {}
+        host = data.get('host', 'localhost')
+        port = data.get('port', 8082)
+        
+        server = start_websocket_server(host=host, port=port)
+        
+        return jsonify({
+            'message': f'WebSocket server started on ws://{host}:{port}',
+            'host': host,
+            'port': port,
+            'stats': server.get_stats()
+        })
+    except ImportError as e:
+        return jsonify({
+            'error': 'websockets library not installed',
+            'install': 'pip install websockets'
+        }), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/websocket/stop', methods=['POST'])
+@require_auth(scope='admin')
+def websocket_stop():
+    """Para servidor WebSocket (requer admin)."""
+    stop_websocket_server()
+    return jsonify({'message': 'WebSocket server stopped'})
+
+
+@app.route('/websocket/broadcast', methods=['POST'])
+@require_auth(scope='write')
+def websocket_broadcast():
+    """Envia mensagem broadcast para clientes WebSocket."""
+    data = request.get_json()
+    if not data or 'channel' not in data or 'type' not in data:
+        return jsonify({'error': 'Missing channel or type'}), 400
+    
+    server = get_websocket_server()
+    server.broadcast_sync(
+        channel=data['channel'],
+        message_type=data['type'],
+        data=data.get('data', {})
+    )
+    
+    return jsonify({
+        'message': f'Broadcast sent to channel: {data["channel"]}',
+        'clients_notified': server.get_client_count()
+    })
+
+
+@app.route('/websocket/clients')
+@optional_auth
+def websocket_clients():
+    """Lista clientes WebSocket conectados."""
+    server = get_websocket_server()
+    stats = server.get_stats()
+    
+    return jsonify({
+        'clients': stats.get('clients', {}),
+        'count': server.get_client_count(),
+        'subscriptions': stats.get('subscriptions', {})
+    })

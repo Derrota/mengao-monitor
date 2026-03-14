@@ -7,6 +7,9 @@ requests>=2.31.0
 flask>=3.0.0
 psutil>=5.9.0
 
+# WebSocket (v3.0) 🆕
+websockets>=12.0
+
 # Config (optional - for YAML support)
 pyyaml>=6.0
 

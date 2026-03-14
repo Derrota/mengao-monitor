@@ -140,6 +140,29 @@ class EmailConfig:
 
 
 @dataclass
+class WebSocketConfig:
+    """Configuration for WebSocket server (v3.0)."""
+    enabled: bool = False
+    host: str = "localhost"
+    port: int = 8082
+    ping_interval: int = 30  # seconds
+    ping_timeout: int = 10  # seconds
+    max_history: int = 100  # max messages in history
+
+    def validate(self) -> List[str]:
+        errors = []
+        if self.port < 1 or self.port > 65535:
+            errors.append(f"Invalid WebSocket port: {self.port}")
+        if self.ping_interval < 5:
+            errors.append("Ping interval must be at least 5 seconds")
+        if self.ping_timeout < 1:
+            errors.append("Ping timeout must be at least 1 second")
+        if self.max_history < 10:
+            errors.append("Max history must be at least 10")
+        return errors
+
+
+@dataclass
 class MonitorConfig:
     """Main configuration for Mengão Monitor."""
     endpoints: List[APIEndpoint] = field(default_factory=list)
@@ -147,6 +170,7 @@ class MonitorConfig:
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     history: HistoryConfig = field(default_factory=HistoryConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
+    websocket: WebSocketConfig = field(default_factory=WebSocketConfig)  # v3.0 🆕
     
     # Global settings
     log_level: str = "INFO"
@@ -177,6 +201,9 @@ class MonitorConfig:
         
         hist_errors = self.history.validate()
         errors.extend([f"History: {e}" for e in hist_errors])
+        
+        ws_errors = self.websocket.validate()
+        errors.extend([f"WebSocket: {e}" for e in ws_errors])
         
         if self.log_level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
             errors.append(f"Invalid log level: {self.log_level}")
@@ -253,6 +280,18 @@ def _parse_history(data: Dict[str, Any]) -> HistoryConfig:
     )
 
 
+def _parse_websocket(data: Dict[str, Any]) -> WebSocketConfig:
+    """Parse WebSocket config from dict (v3.0)."""
+    return WebSocketConfig(
+        enabled=data.get("enabled", False),
+        host=data.get("host", "localhost"),
+        port=data.get("port", 8082),
+        ping_interval=data.get("ping_interval", 30),
+        ping_timeout=data.get("ping_timeout", 10),
+        max_history=data.get("max_history", 100),
+    )
+
+
 def load_config(path: str = "config.json") -> MonitorConfig:
     """
     Load configuration from JSON or YAML file.
@@ -302,6 +341,7 @@ def parse_config(data: Dict[str, Any]) -> MonitorConfig:
         dashboard=_parse_dashboard(data.get("dashboard", {})),
         history=_parse_history(data.get("history", {})),
         email=_parse_email(data.get("email", {})),
+        websocket=_parse_websocket(data.get("websocket", {})),  # v3.0 🆕
         log_level=data.get("log_level", "INFO").upper(),
         log_format=data.get("log_format", "json"),
         metrics_enabled=data.get("metrics_enabled", True),
@@ -360,6 +400,14 @@ def create_sample_config(path: str = "config.sample.json") -> None:
             "enabled": True,
             "db_path": "uptime_history.db",
             "retention_days": 90
+        },
+        "websocket": {
+            "enabled": False,
+            "host": "localhost",
+            "port": 8082,
+            "ping_interval": 30,
+            "ping_timeout": 10,
+            "max_history": 100
         },
         "log_level": "INFO",
         "log_format": "json",

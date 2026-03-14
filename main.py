@@ -1,6 +1,7 @@
 """
 Mengão Monitor - Main Entry Point
 Orchestrates all components: config, logging, metrics, webhooks, history.
+v3.0: WebSocket para updates em tempo real 🆕
 """
 
 import argparse
@@ -23,6 +24,10 @@ from email_alerts import EmailAlertSender
 from health import update_state, set_webhook_sender, start_health_server, enable_auth, create_bootstrap_token
 from auth import auth_manager
 from circuit_breaker import get_circuit_manager, CircuitBreakerConfig
+from websocket_server import (
+    get_websocket_server, start_websocket_server, stop_websocket_server,
+    broadcast_status_update, broadcast_metrics_update, broadcast_alert
+)
 
 
 class MengaoMonitor:

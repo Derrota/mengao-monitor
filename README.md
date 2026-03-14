@@ -33,6 +33,7 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Meta-Monitoring** - Self-diagnostics, watchdog, process health (v2.7) 🆕
 - **Config Watcher** - Hot-reload management via API (v2.8) 🆕
 - **SLA Reporting** - Relatórios automáticos com uptime, MTTR, incidents (v2.9) 🆕
+- **WebSocket** - Updates em tempo real para dashboard (v3.0) 🆕
 
 ## 🚀 Quick Start
 
@@ -653,6 +654,8 @@ mengao-monitor/
 ├── test_config_watcher.py # Testes v2.8 (18 test cases) 🆕
 ├── sla_reporter.py        # SLA Reporting v2.9 (relatórios automáticos) 🆕
 ├── test_sla_reporter.py   # Testes v2.9 (25 test cases) 🆕
+├── websocket_server.py    # WebSocket Server v3.0 (updates tempo real) 🆕
+├── test_websocket.py      # Testes v3.0 (19 test cases) 🆕
 │   └── example_plugins.py # SSL, SLO, Console, File, JSON, Lifecycle
 ├── requirements.txt     # Dependências
 ├── Dockerfile           # Container
@@ -674,7 +677,7 @@ mengao-monitor/
 - [x] **v2.7**: Meta-Monitoring (self-diagnostics, watchdog) ✅
 - [x] **v2.8**: Config Watcher API (hot-reload management) ✅
 - [x] **v2.9**: SLA Reporting automático (JSON/CSV/HTML, incidents, MTTR) ✅ 🆕
-- [ ] **v3.0**: Interface React + WebSocket
+- [x] **v3.0**: WebSocket para updates em tempo real ✅ 🆕
 
 ## 🤝 Contribuindo
 
@@ -929,6 +932,142 @@ curl -X PUT http://localhost:8080/sla/targets \
 - **CSV** - Para planilhas e análises
 
 **Testes:** 25 test cases cobrindo métricas, incidentes, exports e thread safety.
+
+## 🔌 WebSocket para Updates em Tempo Real (v3.0) 🆕
+
+Servidor WebSocket para receber updates do monitor em tempo real no dashboard:
+
+**Canais disponíveis:**
+- **status** - Updates de status das APIs (online, offline, timeout)
+- **metrics** - Métricas de sistema (CPU, memória, disco)
+- **alerts** - Alertas enviados (webhooks, email)
+- **health_checks** - Resultados de health checks
+- **sla** - Updates de SLA (uptime, incidents)
+
+**Endpoints de Gerenciamento:**
+```bash
+# Status do servidor WebSocket
+curl http://localhost:8080/websocket/status
+
+# Iniciar servidor (requer auth admin)
+curl -X POST http://localhost:8080/websocket/start \
+  -H "Authorization: Bearer mm_token" \
+  -H "Content-Type: application/json" \
+  -d '{"host": "localhost", "port": 8082}'
+
+# Parar servidor (requer auth admin)
+curl -X POST http://localhost:8080/websocket/stop
+
+# Listar clientes conectados
+curl http://localhost:8080/websocket/clients
+
+# Enviar broadcast manual (requer auth write)
+curl -X POST http://localhost:8080/websocket/broadcast \
+  -H "Authorization: Bearer mm_token" \
+  -H "Content-Type: application/json" \
+  -d '{"channel": "alerts", "type": "test", "data": {"message": "Test alert"}}'
+```
+
+**Configuração:**
+```json
+{
+  "websocket": {
+    "enabled": true,
+    "host": "localhost",
+    "port": 8082,
+    "ping_interval": 30,
+    "ping_timeout": 10,
+    "max_history": 100
+  }
+}
+```
+
+**Protocolo de Mensagens:**
+
+*Conexão:*
+```javascript
+const ws = new WebSocket('ws://localhost:8082');
+
+// Recebe welcome message
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  console.log(msg.type, msg.data);
+};
+```
+
+*Subscribe a canais:*
+```javascript
+// Inscrever em canais
+ws.send(JSON.stringify({
+  type: 'subscribe',
+  channels: ['status', 'metrics', 'alerts']
+}));
+
+// Recebe confirmação
+// { type: 'subscribed', data: { channels: ['status', 'metrics', 'alerts'] } }
+```
+
+*Receber updates:*
+```javascript
+// Update de status
+// { type: 'status_update', data: { api: 'API Prod', status: 'online', ... }, timestamp: '...' }
+
+// Update de métricas
+// { type: 'metrics_update', data: { cpu: 45.2, memory: 62.1, ... }, timestamp: '...' }
+
+// Alerta
+// { type: 'alert', data: { endpoint: 'API Prod', event: 'down', ... }, timestamp: '...' }
+```
+
+*Ping/Pong:*
+```javascript
+// Enviar ping
+ws.send(JSON.stringify({ type: 'ping' }));
+
+// Recebe pong
+// { type: 'pong', data: { timestamp: '...' } }
+```
+
+*Histórico:*
+```javascript
+// Solicitar histórico de mensagens
+ws.send(JSON.stringify({
+  type: 'get_history',
+  channel: 'status',  // opcional
+  limit: 10
+}));
+
+// Recebe histórico
+// { type: 'history', data: { messages: [...] } }
+```
+
+**Status Response:**
+```json
+{
+  "websocket": {
+    "connections_total": 15,
+    "connections_active": 3,
+    "messages_sent": 1247,
+    "messages_received": 89,
+    "errors": 0,
+    "started_at": "2026-03-14T05:00:00",
+    "clients": {
+      "client_1234": {
+        "connected_at": "2026-03-14T05:01:00",
+        "subscriptions": ["status", "metrics"],
+        "last_ping": "2026-03-14T05:05:00"
+      }
+    },
+    "subscriptions": {
+      "status": ["client_1234"],
+      "metrics": ["client_1234"]
+    }
+  },
+  "timestamp": "2026-03-14T05:06:00"
+}
+```
+
+**Testes:** 19 test cases cobrindo mensagens, clientes, subscriptions e broadcast.
 
 ## ⚙️ Config Watcher (v2.8) 🆕
 
