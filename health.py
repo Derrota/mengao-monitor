@@ -3,6 +3,7 @@ Health Check + Dashboard v2 para Mengão Monitor 🦞
 System metrics, API status, webhook stats, and dashboard with Chart.js.
 v2.1: Token-based authentication
 v2.3: Middleware (CORS, rate limiting, request logging)
+v2.4: Circuit Breaker pattern para endpoints (novo)
 """
 
 from flask import Flask, jsonify, Response, request
@@ -13,6 +14,7 @@ from dashboard_v2 import render_dashboard_v2
 from system_metrics import SystemMetricsCollector
 from auth import auth_manager, require_auth, optional_auth, AuthToken
 from middleware import setup_middleware
+from circuit_breaker import get_circuit_manager, CircuitBreakerConfig
 
 app = Flask(__name__)
 
@@ -197,8 +199,48 @@ def metrics():
             f'mengao_monitor_auth_locked_ips {auth_stats.get("locked_ips", 0)}',
         ]
     
+    # Circuit Breaker metrics
+    cb_lines = []
+    cb_manager = get_circuit_manager()
+    cb_summary = cb_manager.get_stats_summary()
+    cb_lines = [
+        '',
+        '# HELP mengao_monitor_circuit_breakers_total Total de circuit breakers',
+        '# TYPE mengao_monitor_circuit_breakers_total gauge',
+        f'mengao_monitor_circuit_breakers_total {cb_summary["total_breakers"]}',
+        '',
+        '# HELP mengao_monitor_circuit_breakers_open Circuit breakers abertos',
+        '# TYPE mengao_monitor_circuit_breakers_open gauge',
+        f'mengao_monitor_circuit_breakers_open {cb_summary["states"]["open"]}',
+        '',
+        '# HELP mengao_monitor_circuit_breakers_half_open Circuit breakers em half-open',
+        '# TYPE mengao_monitor_circuit_breakers_half_open gauge',
+        f'mengao_monitor_circuit_breakers_half_open {cb_summary["states"]["half_open"]}',
+        '',
+        '# HELP mengao_monitor_circuit_breakers_closed Circuit breakers fechados',
+        '# TYPE mengao_monitor_circuit_breakers_closed gauge',
+        f'mengao_monitor_circuit_breakers_closed {cb_summary["states"]["closed"]}',
+        '',
+        '# HELP mengao_monitor_circuit_breaker_rejected_total Requests rejeitados por circuito aberto',
+        '# TYPE mengao_monitor_circuit_breaker_rejected_total counter',
+        f'mengao_monitor_circuit_breaker_rejected_total {cb_summary["total_rejected_calls"]}',
+    ]
+    
+    # Per-circuit-breaker metrics
+    for cb_name, cb_status in cb_manager.get_all_status().items():
+        cb_safe = cb_name.replace(' ', '_').lower()
+        state_val = {'closed': 0, 'half_open': 1, 'open': 2}.get(cb_status['state'], 0)
+        cb_lines.extend([
+            '',
+            f'# HELP mengao_circuit_breaker_state Estado do circuit breaker (0=closed, 1=half_open, 2=open)',
+            f'# TYPE mengao_circuit_breaker_state gauge',
+            f'mengao_circuit_breaker_state{{name="{cb_safe}"}} {state_val}',
+            f'mengao_circuit_breaker_failure_rate{{name="{cb_safe}"}} {cb_status["stats"]["failure_rate"]}',
+            f'mengao_circuit_breaker_consecutive_failures{{name="{cb_safe}"}} {cb_status["consecutive_failures"]}',
+        ])
+    
     # Combine all metrics
-    all_lines = api_lines + webhook_lines + auth_lines + [''] + system_lines
+    all_lines = api_lines + webhook_lines + auth_lines + cb_lines + [''] + system_lines
     
     return '\n'.join(all_lines), 200, {'Content-Type': 'text/plain'}
 
@@ -283,6 +325,62 @@ def revoke_token(token_prefix):
 def auth_stats():
     """Estatísticas de autenticação (requer admin)."""
     return jsonify(auth_manager.get_stats())
+
+
+# ===== CIRCUIT BREAKER ENDPOINTS =====
+
+@app.route('/circuit-breakers')
+@optional_auth
+def circuit_breakers_status():
+    """Status de todos os circuit breakers."""
+    manager = get_circuit_manager()
+    return jsonify({
+        'circuit_breakers': manager.get_all_status(),
+        'summary': manager.get_stats_summary(),
+        'timestamp': datetime.now().isoformat()
+    })
+
+
+@app.route('/circuit-breakers/<name>')
+@optional_auth
+def circuit_breaker_detail(name):
+    """Status detalhado de um circuit breaker específico."""
+    manager = get_circuit_manager()
+    cb = manager.get(name)
+    
+    if not cb:
+        return jsonify({'error': f'Circuit breaker not found: {name}'}), 404
+    
+    return jsonify(cb.get_status())
+
+
+@app.route('/circuit-breakers/<name>/reset', methods=['POST'])
+@require_auth(scope='write')
+def circuit_breaker_reset(name):
+    """Reset manual de um circuit breaker específico."""
+    manager = get_circuit_manager()
+    cb = manager.get(name)
+    
+    if not cb:
+        return jsonify({'error': f'Circuit breaker not found: {name}'}), 404
+    
+    cb.reset()
+    return jsonify({
+        'message': f'Circuit breaker reset: {name}',
+        'new_state': cb.state.value
+    })
+
+
+@app.route('/circuit-breakers/reset-all', methods=['POST'])
+@require_auth(scope='admin')
+def circuit_breakers_reset_all():
+    """Reset de todos os circuit breakers (requer admin)."""
+    manager = get_circuit_manager()
+    manager.reset_all()
+    return jsonify({
+        'message': 'All circuit breakers reset',
+        'count': len(manager._breakers)
+    })
 
 
 def update_state(**kwargs):

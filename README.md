@@ -27,6 +27,7 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Rate Limiting** - Proteção contra spam de alertas (v1.6)
 - **Retry automático** - Webhooks com backoff exponencial (v1.6)
 - **Webhook Stats** - Estatísticas detalhadas de envio (v2.0)
+- **Circuit Breaker** - Proteção contra endpoints instáveis (v2.4) 🆕
 
 ## 🚀 Quick Start
 
@@ -340,6 +341,59 @@ Tentativa 3 → Falha → Erro final
 - **4xx**: Não retry (erro do cliente)
 - **5xx**: Retry automático (erro do servidor)
 
+## ⚡ Circuit Breaker (v2.4) 🆕
+
+Previne flood de requests para endpoints instáveis com o padrão Circuit Breaker:
+
+**Estados:**
+- 🟢 **CLOSED**: Normal, requests passam
+- 🔴 **OPEN**: Falhas acima do threshold, requests bloqueados
+- 🟡 **HALF_OPEN**: Após timeout, permite request de teste
+
+**Configuração padrão:**
+```python
+failure_threshold: 5      # Falhas consecutivas para abrir
+recovery_timeout: 60      # Segundos antes de half-open
+success_threshold: 3      # Sucessos para fechar
+half_open_max_calls: 1    # Requests simultâneos em half-open
+```
+
+**Endpoints de Gerenciamento:**
+```bash
+# Status de todos os circuit breakers
+curl http://localhost:8080/circuit-breakers
+
+# Status detalhado de um específico
+curl http://localhost:8080/circuit-breakers/API%20Produção
+
+# Reset manual (requer auth write)
+curl -X POST http://localhost:8080/circuit-breakers/API%20Produção/reset \
+  -H "Authorization: Bearer mm_token"
+
+# Reset todos (requer auth admin)
+curl -X POST http://localhost:8080/circuit-breakers/reset-all
+```
+
+**Métricas Prometheus:**
+```
+mengao_monitor_circuit_breakers_total 5
+mengao_monitor_circuit_breakers_open 1
+mengao_monitor_circuit_breakers_closed 4
+mengao_circuit_breaker_state{name="api_prod"} 0
+mengao_circuit_breaker_failure_rate{name="api_prod"} 12.5
+mengao_circuit_breaker_rejected_total 42
+```
+
+**Fluxo de Estados:**
+```
+CLOSED ──(5 falhas)──> OPEN
+   ↑                      │
+   │                      │ (60s timeout)
+   │                      ↓
+   └──(3 sucessos)── HALF_OPEN
+```
+- **5xx**: Retry automático (erro do servidor)
+
 ## ⚙️ Configuração Completa
 
 ```json
@@ -509,6 +563,8 @@ mengao-monitor/
 ├── test_auth.py         # Testes v2.2 (autenticação, brute force) 🆕
 ├── middleware.py        # Middleware v2.3 (CORS, rate limiting, logging) 🆕
 ├── test_middleware.py   # Testes v2.3 (middleware) 🆕
+├── circuit_breaker.py   # Circuit Breaker v2.4 (resiliência) 🆕
+├── test_circuit_breaker.py # Testes v2.4 (circuit breaker) 🆕
 ├── requirements.txt     # Dependências
 ├── Dockerfile           # Container
 ├── docker-compose.yml
@@ -523,7 +579,8 @@ mengao-monitor/
 - [x] **v2.1**: API REST de gerenciamento + Hot-reload de config ✅
 - [x] **v2.2**: Autenticação no dashboard + API ✅
 - [x] **v2.3**: Middleware (CORS, rate limiting, request logging) ✅
-- [ ] **v2.4**: Multi-region checks
+- [x] **v2.4**: Circuit Breaker pattern para endpoints ✅
+- [ ] **v2.5**: Multi-region checks
 - [ ] **v2.4**: SLA reporting automático
 - [ ] **v2.5**: Interface React + WebSocket
 
