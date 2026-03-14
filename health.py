@@ -1009,3 +1009,139 @@ def websocket_clients():
         'count': server.get_client_count(),
         'subscriptions': stats.get('subscriptions', {})
     })
+
+
+# ==========================================
+# Notification Manager Endpoints (v3.1) 🆕
+# ==========================================
+
+@app.route('/notifications')
+@optional_auth
+def notification_stats():
+    """Estatísticas do gerenciador de notificações."""
+    from notification_manager import get_notification_manager
+    manager = get_notification_manager()
+    return jsonify(manager.get_stats())
+
+
+@app.route('/notifications/history')
+@optional_auth
+def notification_history():
+    """Histórico de notificações com filtros opcionais."""
+    from notification_manager import get_notification_manager, NotificationPriority
+    manager = get_notification_manager()
+    
+    limit = request.args.get('limit', 50, type=int)
+    priority = request.args.get('priority')
+    endpoint = request.args.get('endpoint')
+    
+    priority_enum = None
+    if priority:
+        try:
+            priority_enum = NotificationPriority(priority)
+        except ValueError:
+            return jsonify({'error': f'Invalid priority: {priority}'}), 400
+    
+    history = manager.get_history(limit=limit, priority=priority_enum, endpoint=endpoint)
+    return jsonify({'history': history, 'count': len(history)})
+
+
+@app.route('/notifications/send', methods=['POST'])
+@require_auth(scope='write')
+def notification_send():
+    """Envia notificação manual."""
+    from notification_manager import get_notification_manager, NotificationPriority, NotificationChannel
+    manager = get_notification_manager()
+    
+    data = request.get_json()
+    if not data or 'title' not in data or 'message' not in data:
+        return jsonify({'error': 'Missing title or message'}), 400
+    
+    priority_str = data.get('priority', 'medium')
+    try:
+        priority = NotificationPriority(priority_str)
+    except ValueError:
+        return jsonify({'error': f'Invalid priority: {priority_str}'}), 400
+    
+    force_channels = None
+    if 'channels' in data:
+        force_channels = []
+        for ch in data['channels']:
+            try:
+                force_channels.append(NotificationChannel(ch))
+            except ValueError:
+                return jsonify({'error': f'Invalid channel: {ch}'}), 400
+    
+    notif_id = manager.notify(
+        title=data['title'],
+        message=data['message'],
+        priority=priority,
+        endpoint=data.get('endpoint'),
+        data=data.get('data'),
+        force_channels=force_channels
+    )
+    
+    return jsonify({
+        'notification_id': notif_id,
+        'message': 'Notification sent'
+    })
+
+
+@app.route('/notifications/rules', methods=['GET'])
+@optional_auth
+def notification_rules_list():
+    """Lista regras de notificação."""
+    from notification_manager import get_notification_manager
+    manager = get_notification_manager()
+    return jsonify({
+        'rules': {
+            name: {
+                'enabled': rule.enabled,
+                'channels': [c.value for c in rule.channels],
+                'priority_filter': [p.value for p in rule.priority_filter],
+                'endpoint_filter': rule.endpoint_filter,
+                'cooldown_seconds': rule.cooldown_seconds,
+                'rate_limit_per_hour': rule.rate_limit_per_hour
+            }
+            for name, rule in manager.rules.items()
+        }
+    })
+
+
+@app.route('/notifications/rules', methods=['POST'])
+@require_auth(scope='admin')
+def notification_rules_add():
+    """Adiciona regra de notificação."""
+    from notification_manager import get_notification_manager, NotificationRule, NotificationChannel, NotificationPriority
+    manager = get_notification_manager()
+    
+    data = request.get_json()
+    if not data or 'name' not in data:
+        return jsonify({'error': 'Missing rule name'}), 400
+    
+    channels = []
+    for ch in data.get('channels', ['websocket']):
+        try:
+            channels.append(NotificationChannel(ch))
+        except ValueError:
+            return jsonify({'error': f'Invalid channel: {ch}'}), 400
+    
+    priority_filter = []
+    for p in data.get('priority_filter', []):
+        try:
+            priority_filter.append(NotificationPriority(p))
+        except ValueError:
+            return jsonify({'error': f'Invalid priority: {p}'}), 400
+    
+    rule = NotificationRule(
+        name=data['name'],
+        enabled=data.get('enabled', True),
+        channels=channels,
+        priority_filter=priority_filter,
+        endpoint_filter=data.get('endpoint_filter', []),
+        cooldown_seconds=data.get('cooldown_seconds', 300),
+        rate_limit_per_hour=data.get('rate_limit_per_hour', 10)
+    )
+    
+    manager.add_rule(rule)
+    return jsonify({'message': f'Rule added: {data["name"]}'})

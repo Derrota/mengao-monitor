@@ -34,6 +34,7 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Config Watcher** - Hot-reload management via API (v2.8) 🆕
 - **SLA Reporting** - Relatórios automáticos com uptime, MTTR, incidents (v2.9) 🆕
 - **WebSocket** - Updates em tempo real para dashboard (v3.0) 🆕
+- **Notification Manager** - Sistema unificado de notificações (v3.1) 🆕
 
 ## 🚀 Quick Start
 
@@ -656,6 +657,8 @@ mengao-monitor/
 ├── test_sla_reporter.py   # Testes v2.9 (25 test cases) 🆕
 ├── websocket_server.py    # WebSocket Server v3.0 (updates tempo real) 🆕
 ├── test_websocket.py      # Testes v3.0 (19 test cases) 🆕
+├── notification_manager.py  # Notification Manager v3.1 (sistema unificado) 🆕
+├── test_notification_manager.py # Testes v3.1 (25 test cases) 🆕
 │   └── example_plugins.py # SSL, SLO, Console, File, JSON, Lifecycle
 ├── requirements.txt     # Dependências
 ├── Dockerfile           # Container
@@ -1068,6 +1071,118 @@ ws.send(JSON.stringify({
 ```
 
 **Testes:** 19 test cases cobrindo mensagens, clientes, subscriptions e broadcast.
+
+## 🔔 Notification Manager (v3.1) 🆕
+
+Sistema unificado de notificações com regras, rate limiting e múltiplos canais:
+
+**Canais suportados:**
+- **websocket** - Broadcast para clientes WebSocket conectados
+- **discord** - Webhooks Discord (via `webhooks.py`)
+- **slack** - Webhooks Slack (via `webhooks.py`)
+- **telegram** - Bot Telegram (via `webhooks.py`)
+- **email** - SMTP (via `email_alerts.py`)
+
+**Prioridades:**
+- **low** - Informativo (ex: config reload)
+- **medium** - Aviso (ex: response time alto)
+- **high** - Alerta (ex: endpoint down)
+- **critical** - Crítico (ex: múltiplos endpoints down)
+
+**Endpoints:**
+```bash
+# Estatísticas do gerenciador
+curl http://localhost:8080/notifications
+
+# Histórico de notificações
+curl http://localhost:8080/notifications/history?limit=50&priority=high
+
+# Enviar notificação manual (requer auth write)
+curl -X POST http://localhost:8080/notifications/send \
+  -H "Authorization: Bearer mm_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Test Alert",
+    "message": "This is a test notification",
+    "priority": "high",
+    "endpoint": "/api/test",
+    "channels": ["websocket", "discord"]
+  }'
+
+# Listar regras
+curl http://localhost:8080/notifications/rules
+
+# Adicionar regra (requer auth admin)
+curl -X POST http://localhost:8080/notifications/rules \
+  -H "Authorization: Bearer mm_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "critical_alerts",
+    "channels": ["websocket", "discord", "telegram"],
+    "priority_filter": ["high", "critical"],
+    "cooldown_seconds": 60,
+    "rate_limit_per_hour": 5
+  }'
+```
+
+**Configuração:**
+```json
+{
+  "notifications": {
+    "enabled": true,
+    "max_history": 1000,
+    "rules": [
+      {
+        "name": "critical_alerts",
+        "enabled": true,
+        "channels": ["websocket", "discord"],
+        "priority_filter": ["high", "critical"],
+        "cooldown_seconds": 60,
+        "rate_limit_per_hour": 5
+      },
+      {
+        "name": "all_websocket",
+        "enabled": true,
+        "channels": ["websocket"],
+        "cooldown_seconds": 0,
+        "rate_limit_per_hour": 1000
+      }
+    ]
+  }
+}
+```
+
+**Regras de Notificação:**
+- **name** - Identificador único da regra
+- **enabled** - Ativar/desativar regra
+- **channels** - Canais de entrega
+- **priority_filter** - Prioridades aceitas (vazio = todas)
+- **endpoint_filter** - Endpoints específicos (vazio = todos)
+- **cooldown_seconds** - Tempo entre notificações similares
+- **rate_limit_per_hour** - Máximo de notificações por hora
+
+**Stats Response:**
+```json
+{
+  "notifications_total": 142,
+  "notifications_sent": 135,
+  "notifications_failed": 2,
+  "notifications_suppressed": 5,
+  "by_priority": {"low": 45, "medium": 62, "high": 28, "critical": 7},
+  "by_channel": {"websocket": 142, "discord": 35, "telegram": 7},
+  "rules": {
+    "critical_alerts": {
+      "enabled": true,
+      "channels": ["websocket", "discord"],
+      "cooldown_seconds": 60,
+      "rate_limit_per_hour": 5
+    }
+  },
+  "recent_notifications": [...]
+}
+```
+
+**Testes:** 25 test cases cobrindo regras, rate limiting, cooldown, filtros e edge cases.
 
 ## ⚙️ Config Watcher (v2.8) 🆕
 

@@ -163,6 +163,52 @@ class WebSocketConfig:
 
 
 @dataclass
+class NotificationRuleConfig:
+    """Configuration for a notification rule (v3.1)."""
+    name: str
+    enabled: bool = True
+    channels: List[str] = field(default_factory=lambda: ["websocket"])
+    priority_filter: List[str] = field(default_factory=list)
+    endpoint_filter: List[str] = field(default_factory=list)
+    cooldown_seconds: int = 300
+    rate_limit_per_hour: int = 10
+
+    def validate(self) -> List[str]:
+        errors = []
+        valid_channels = ["websocket", "discord", "slack", "telegram", "email"]
+        for ch in self.channels:
+            if ch not in valid_channels:
+                errors.append(f"Invalid channel: {ch}")
+        valid_priorities = ["low", "medium", "high", "critical"]
+        for p in self.priority_filter:
+            if p not in valid_priorities:
+                errors.append(f"Invalid priority: {p}")
+        if self.cooldown_seconds < 0:
+            errors.append("Cooldown cannot be negative")
+        if self.rate_limit_per_hour < 1:
+            errors.append("Rate limit must be at least 1")
+        return errors
+
+
+@dataclass
+class NotificationConfig:
+    """Configuration for notification manager (v3.1)."""
+    enabled: bool = True
+    rules: List[NotificationRuleConfig] = field(default_factory=list)
+    max_history: int = 1000
+
+    def validate(self) -> List[str]:
+        errors = []
+        if self.max_history < 10:
+            errors.append("Max history must be at least 10")
+        for i, rule in enumerate(self.rules):
+            rule_errors = rule.validate()
+            for err in rule_errors:
+                errors.append(f"Rule [{i}] {rule.name}: {err}")
+        return errors
+
+
+@dataclass
 class MonitorConfig:
     """Main configuration for Mengão Monitor."""
     endpoints: List[APIEndpoint] = field(default_factory=list)
@@ -171,6 +217,7 @@ class MonitorConfig:
     history: HistoryConfig = field(default_factory=HistoryConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
     websocket: WebSocketConfig = field(default_factory=WebSocketConfig)  # v3.0 🆕
+    notifications: NotificationConfig = field(default_factory=NotificationConfig)  # v3.1 🆕
     
     # Global settings
     log_level: str = "INFO"
@@ -204,6 +251,9 @@ class MonitorConfig:
         
         ws_errors = self.websocket.validate()
         errors.extend([f"WebSocket: {e}" for e in ws_errors])
+        
+        notif_errors = self.notifications.validate()
+        errors.extend([f"Notifications: {e}" for e in notif_errors])
         
         if self.log_level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
             errors.append(f"Invalid log level: {self.log_level}")
@@ -292,6 +342,28 @@ def _parse_websocket(data: Dict[str, Any]) -> WebSocketConfig:
     )
 
 
+def _parse_notification_rule(data: Dict[str, Any]) -> NotificationRuleConfig:
+    """Parse notification rule from dict (v3.1)."""
+    return NotificationRuleConfig(
+        name=data.get("name", "default"),
+        enabled=data.get("enabled", True),
+        channels=data.get("channels", ["websocket"]),
+        priority_filter=data.get("priority_filter", []),
+        endpoint_filter=data.get("endpoint_filter", []),
+        cooldown_seconds=data.get("cooldown_seconds", 300),
+        rate_limit_per_hour=data.get("rate_limit_per_hour", 10),
+    )
+
+
+def _parse_notifications(data: Dict[str, Any]) -> NotificationConfig:
+    """Parse notification config from dict (v3.1)."""
+    return NotificationConfig(
+        enabled=data.get("enabled", True),
+        rules=[_parse_notification_rule(r) for r in data.get("rules", [])],
+        max_history=data.get("max_history", 1000),
+    )
+
+
 def load_config(path: str = "config.json") -> MonitorConfig:
     """
     Load configuration from JSON or YAML file.
@@ -342,6 +414,7 @@ def parse_config(data: Dict[str, Any]) -> MonitorConfig:
         history=_parse_history(data.get("history", {})),
         email=_parse_email(data.get("email", {})),
         websocket=_parse_websocket(data.get("websocket", {})),  # v3.0 🆕
+        notifications=_parse_notifications(data.get("notifications", {})),  # v3.1 🆕
         log_level=data.get("log_level", "INFO").upper(),
         log_format=data.get("log_format", "json"),
         metrics_enabled=data.get("metrics_enabled", True),
@@ -408,6 +481,27 @@ def create_sample_config(path: str = "config.sample.json") -> None:
             "ping_interval": 30,
             "ping_timeout": 10,
             "max_history": 100
+        },
+        "notifications": {
+            "enabled": True,
+            "max_history": 1000,
+            "rules": [
+                {
+                    "name": "critical_alerts",
+                    "enabled": True,
+                    "channels": ["websocket", "discord"],
+                    "priority_filter": ["high", "critical"],
+                    "cooldown_seconds": 60,
+                    "rate_limit_per_hour": 5
+                },
+                {
+                    "name": "all_websocket",
+                    "enabled": True,
+                    "channels": ["websocket"],
+                    "cooldown_seconds": 0,
+                    "rate_limit_per_hour": 1000
+                }
+            ]
         },
         "log_level": "INFO",
         "log_format": "json",
