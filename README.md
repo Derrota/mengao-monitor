@@ -28,6 +28,7 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Retry automático** - Webhooks com backoff exponencial (v1.6)
 - **Webhook Stats** - Estatísticas detalhadas de envio (v2.0)
 - **Circuit Breaker** - Proteção contra endpoints instáveis (v2.4) 🆕
+- **Plugin System** - Arquitetura extensível para customizações (v2.5) 🆕
 
 ## 🚀 Quick Start
 
@@ -392,6 +393,71 @@ CLOSED ──(5 falhas)──> OPEN
    │                      ↓
    └──(3 sucessos)── HALF_OPEN
 ```
+
+## 🔌 Plugin System (v2.5) 🆕
+
+Arquitetura extensível para adicionar funcionalidades customizadas ao monitor:
+
+**Tipos de Plugins:**
+- **HealthCheckPlugin** - Lógica customizada de health check
+- **AlertHandlerPlugin** - Entrega de alertas customizada (SMS, PagerDuty, etc.)
+- **ExporterPlugin** - Exportar métricas para sistemas externos
+- **HookPlugin** - Executar código em eventos (startup, shutdown, alert, etc.)
+
+**Exemplo: SSL Certificate Check Plugin:**
+```python
+from plugins import HealthCheckPlugin
+
+class SSLCheckPlugin(HealthCheckPlugin):
+    name = "ssl_check"
+    version = "1.0.0"
+    description = "Validates SSL certificate expiration"
+    
+    def check(self, api_name: str, url: str, config: dict = None) -> dict:
+        # Custom SSL validation logic
+        return {
+            "status": "ok",
+            "days_left": 45,
+            "expires": "2026-05-01"
+        }
+```
+
+**Endpoints de Gerenciamento:**
+```bash
+# Listar todos os plugins
+curl http://localhost:8080/plugins
+
+# Detalhes de um plugin específico
+curl http://localhost:8080/plugins/ssl_check
+
+# Habilitar/desabilitar plugin
+curl -X POST http://localhost:8080/plugins/ssl_check/enable
+curl -X POST http://localhost:8080/plugins/ssl_check/disable
+
+# Carregar plugins de um diretório
+curl -X POST http://localhost:8080/plugins/load \
+  -H "Content-Type: application/json" \
+  -d '{"directory": "./custom_plugins/"}'
+```
+
+**Estrutura de Plugins:**
+```
+mengao-monitor/
+├── plugins.py              # Plugin system core
+├── test_plugins.py         # Testes (43 test cases)
+├── plugins_examples/       # Exemplos de plugins
+│   └── example_plugins.py  # SSL, SLO, Console, File, JSON, Lifecycle
+└── custom_plugins/         # Seus plugins customizados
+    └── my_plugin.py
+```
+
+**Métricas Prometheus de Plugins:**
+```
+mengao_monitor_plugins_total 6
+mengao_monitor_plugins_enabled 5
+mengao_monitor_plugins_health_checks 2
+mengao_monitor_plugins_alert_handlers 2
+```
 - **5xx**: Retry automático (erro do servidor)
 
 ## ⚙️ Configuração Completa
@@ -565,6 +631,10 @@ mengao-monitor/
 ├── test_middleware.py   # Testes v2.3 (middleware) 🆕
 ├── circuit_breaker.py   # Circuit Breaker v2.4 (resiliência) 🆕
 ├── test_circuit_breaker.py # Testes v2.4 (circuit breaker) 🆕
+├── plugins.py           # Plugin System v2.5 (extensibilidade) 🆕
+├── test_plugins.py      # Testes v2.5 (43 test cases) 🆕
+├── plugins_examples/    # Exemplos de plugins 🆕
+│   └── example_plugins.py # SSL, SLO, Console, File, JSON, Lifecycle
 ├── requirements.txt     # Dependências
 ├── Dockerfile           # Container
 ├── docker-compose.yml
@@ -580,9 +650,10 @@ mengao-monitor/
 - [x] **v2.2**: Autenticação no dashboard + API ✅
 - [x] **v2.3**: Middleware (CORS, rate limiting, request logging) ✅
 - [x] **v2.4**: Circuit Breaker pattern para endpoints ✅
-- [ ] **v2.5**: Multi-region checks
-- [ ] **v2.4**: SLA reporting automático
-- [ ] **v2.5**: Interface React + WebSocket
+- [x] **v2.5**: Plugin System (extensibilidade) ✅
+- [ ] **v2.6**: Multi-region checks
+- [ ] **v2.7**: SLA reporting automático
+- [ ] **v2.8**: Interface React + WebSocket
 
 ## 🤝 Contribuindo
 

@@ -15,6 +15,7 @@ from system_metrics import SystemMetricsCollector
 from auth import auth_manager, require_auth, optional_auth, AuthToken
 from middleware import setup_middleware
 from circuit_breaker import get_circuit_manager, CircuitBreakerConfig
+from plugins import PluginManager
 
 app = Flask(__name__)
 
@@ -37,6 +38,7 @@ MIDDLEWARE_CONFIG = {
 
 app = setup_middleware(app, MIDDLEWARE_CONFIG)
 system_collector = SystemMetricsCollector()
+plugin_manager = PluginManager()  # Plugin System v2.5
 
 # Estado global do monitor (será injetado)
 monitor_state = {
@@ -420,3 +422,67 @@ def start_health_server(port=8080):
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
     return thread
+
+
+# ===== PLUGIN ENDPOINTS (v2.5) =====
+
+@app.route('/plugins')
+@optional_auth
+def plugins_list():
+    """Lista todos os plugins registrados."""
+    return jsonify({
+        'plugins': plugin_manager.get_all_plugins(),
+        'stats': plugin_manager.get_stats(),
+        'timestamp': datetime.now().isoformat()
+    })
+
+
+@app.route('/plugins/<name>')
+@optional_auth
+def plugin_detail(name):
+    """Detalhes de um plugin específico."""
+    plugin = plugin_manager.get_plugin(name)
+    
+    if not plugin:
+        return jsonify({'error': f'Plugin not found: {name}'}), 404
+    
+    return jsonify(plugin.get_info())
+
+
+@app.route('/plugins/<name>/enable', methods=['POST'])
+@require_auth(scope='write')
+def plugin_enable(name):
+    """Habilita um plugin."""
+    if plugin_manager.enable_plugin(name):
+        return jsonify({'message': f'Plugin enabled: {name}'})
+    return jsonify({'error': f'Plugin not found: {name}'}), 404
+
+
+@app.route('/plugins/<name>/disable', methods=['POST'])
+@require_auth(scope='write')
+def plugin_disable(name):
+    """Desabilita um plugin."""
+    if plugin_manager.disable_plugin(name):
+        return jsonify({'message': f'Plugin disabled: {name}'})
+    return jsonify({'error': f'Plugin not found: {name}'}), 404
+
+
+@app.route('/plugins/load', methods=['POST'])
+@require_auth(scope='admin')
+def plugins_load():
+    """Carrega plugins de um diretório (requer admin)."""
+    data = request.get_json()
+    if not data or 'directory' not in data:
+        return jsonify({'error': 'Missing directory path'}), 400
+    
+    loaded = plugin_manager.load_plugins_from_dir(data['directory'])
+    return jsonify({
+        'message': f'Loaded {loaded} plugins',
+        'loaded': loaded,
+        'directory': data['directory']
+    })
+
+
+def get_plugin_manager():
+    """Retorna o plugin manager para uso externo."""
+    return plugin_manager
