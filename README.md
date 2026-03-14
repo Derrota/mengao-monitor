@@ -28,7 +28,8 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Retry automático** - Webhooks com backoff exponencial (v1.6)
 - **Webhook Stats** - Estatísticas detalhadas de envio (v2.0)
 - **Circuit Breaker** - Proteção contra endpoints instáveis (v2.4) 🆕
-- **Plugin System** - Arquitetura extensível para customizações (v2.5) 🆕
+- **Plugin System** - Arquitetura extensível para customizacoes (v2.5) 🆕
+- **Health Checks Avançados** - DNS, SSL, TCP, HTTP headers, SLO, JSON validation (v2.6) 🆕
 
 ## 🚀 Quick Start
 
@@ -446,6 +447,8 @@ mengao-monitor/
 ├── plugins.py              # Plugin system core
 ├── test_plugins.py         # Testes (43 test cases)
 ├── plugins_examples/       # Exemplos de plugins
+├── health_checks.py     # Health Checks Avançados v2.6 (DNS, SSL, TCP, SLO, JSON) 🆕
+├── test_health_checks.py # Testes v2.6 (25 test cases) 🆕
 │   └── example_plugins.py  # SSL, SLO, Console, File, JSON, Lifecycle
 └── custom_plugins/         # Seus plugins customizados
     └── my_plugin.py
@@ -634,6 +637,8 @@ mengao-monitor/
 ├── plugins.py           # Plugin System v2.5 (extensibilidade) 🆕
 ├── test_plugins.py      # Testes v2.5 (43 test cases) 🆕
 ├── plugins_examples/    # Exemplos de plugins 🆕
+├── health_checks.py     # Health Checks Avançados v2.6 (DNS, SSL, TCP, SLO, JSON) 🆕
+├── test_health_checks.py # Testes v2.6 (25 test cases) 🆕
 │   └── example_plugins.py # SSL, SLO, Console, File, JSON, Lifecycle
 ├── requirements.txt     # Dependências
 ├── Dockerfile           # Container
@@ -651,7 +656,8 @@ mengao-monitor/
 - [x] **v2.3**: Middleware (CORS, rate limiting, request logging) ✅
 - [x] **v2.4**: Circuit Breaker pattern para endpoints ✅
 - [x] **v2.5**: Plugin System (extensibilidade) ✅
-- [ ] **v2.6**: Multi-region checks
+- [x] **v2.6**: Health Checks Avançados (DNS, SSL, TCP, SLO, JSON) ✅
+- [ ] **v2.7**: Multi-region checks
 - [ ] **v2.7**: SLA reporting automático
 - [ ] **v2.8**: Interface React + WebSocket
 
@@ -672,3 +678,109 @@ MIT License - veja [LICENSE](LICENSE) para detalhes.
 Criado com ❤️ e paixão rubro-negra por [Lek](https://github.com/Derrota).
 
 **Uma vez Flamengo, sempre Flamengo!** 🔴⚫
+
+
+## 🏥 Health Checks Avançados (v2.6) 🆕
+
+Sistema de health checks customizáveis para monitorar além de HTTP status:
+
+**Tipos de Checks:**
+- **DNSCheck** - Verifica resolução DNS de hostname
+- **SSLCheck** - Valida certificado SSL (expiração, issuer, SANs)
+- **TCPCheck** - Verifica se porta TCP está aberta
+- **HTTPHeaderCheck** - Valida headers HTTP específicos na resposta
+- **ResponseTimeSLOCheck** - Verifica se tempo de resposta está dentro do SLO
+- **JSONResponseCheck** - Valida estrutura e valores de resposta JSON
+
+**Exemplo de Configuração:**
+```json
+{
+  "health_checks": [
+    {
+      "type": "dns",
+      "name": "dns_example",
+      "hostname": "api.exemplo.com",
+      "expected_ips": ["1.2.3.4"]
+    },
+    {
+      "type": "ssl",
+      "name": "ssl_example",
+      "hostname": "api.exemplo.com",
+      "warn_days": 30,
+      "critical_days": 7
+    },
+    {
+      "type": "response_time_slo",
+      "name": "slo_example",
+      "url": "https://api.exemplo.com/health",
+      "slo_ms": 500,
+      "warn_threshold": 0.8
+    },
+    {
+      "type": "json_response",
+      "name": "json_example",
+      "url": "https://api.exemplo.com/status",
+      "required_fields": ["status", "data.count"],
+      "json_path_checks": {"data.count": {"gt": 0}}
+    }
+  ]
+}
+```
+
+**Endpoints de Gerenciamento:**
+```bash
+# Status geral de todos os health checks
+curl http://localhost:8080/health-checks/status
+
+# Lista de todos os health checks
+curl http://localhost:8080/health-checks
+
+# Detalhes de um check específico
+curl http://localhost:8080/health-checks/dns_example
+
+# Executar check específico (requer auth write)
+curl -X POST http://localhost:8080/health-checks/dns_example/run
+
+# Executar todos os checks
+curl -X POST http://localhost:8080/health-checks/run-all
+
+# Histórico de execuções
+curl http://localhost:8080/health-checks/history?name=dns_example&limit=50
+```
+
+**Status Response:**
+```json
+{
+  "overall_status": "degraded",
+  "summary": {
+    "total": 4,
+    "healthy": 3,
+    "degraded": 1,
+    "unhealthy": 0
+  },
+  "checks": {
+    "dns_example": {
+      "name": "dns_example",
+      "status": "healthy",
+      "message": "DNS resolved: 1.2.3.4",
+      "duration_ms": 12.34,
+      "timestamp": "2026-03-14T00:30:00"
+    }
+  }
+}
+```
+
+**Check Stats:**
+```json
+{
+  "name": "ssl_example",
+  "description": "SSL certificate check for api.exemplo.com:443",
+  "run_count": 142,
+  "failure_count": 3,
+  "success_rate": 97.89,
+  "last_run": "2026-03-14T00:30:00",
+  "last_status": "healthy"
+}
+```
+
+**Testes:** 25 test cases cobrindo todos os tipos de check.

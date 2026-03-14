@@ -486,3 +486,79 @@ def plugins_load():
 def get_plugin_manager():
     """Retorna o plugin manager para uso externo."""
     return plugin_manager
+
+
+# ===== HEALTH CHECKS ENDPOINTS (v2.6) =====
+
+# Health Check Manager global
+health_check_manager = HealthCheckManager()
+
+
+@app.route('/health-checks')
+@optional_auth
+def health_checks_list():
+    """Lista todos os health checks registrados."""
+    return jsonify({
+        'health_checks': health_check_manager.get_all_stats(),
+        'timestamp': datetime.now().isoformat()
+    })
+
+
+@app.route('/health-checks/status')
+@optional_auth
+def health_checks_status():
+    """Status geral de todos os health checks."""
+    return jsonify(health_check_manager.get_status())
+
+
+@app.route('/health-checks/<name>')
+@optional_auth
+def health_check_detail(name):
+    """Detalhes de um health check específico."""
+    stats = health_check_manager.get_check_stats(name)
+    
+    if not stats:
+        return jsonify({'error': f'Health check not found: {name}'}), 404
+    
+    return jsonify(stats)
+
+
+@app.route('/health-checks/<name>/run', methods=['POST'])
+@require_auth(scope='write')
+def health_check_run(name):
+    """Executa um health check específico."""
+    result = health_check_manager.run_check(name)
+    
+    if not result:
+        return jsonify({'error': f'Health check not found: {name}'}), 404
+    
+    return jsonify(result.to_dict())
+
+
+@app.route('/health-checks/run-all', methods=['POST'])
+@require_auth(scope='write')
+def health_checks_run_all():
+    """Executa todos os health checks."""
+    results = health_check_manager.run_all()
+    return jsonify({
+        'results': {name: r.to_dict() for name, r in results.items()},
+        'timestamp': datetime.now().isoformat()
+    })
+
+
+@app.route('/health-checks/history')
+@optional_auth
+def health_checks_history():
+    """Histórico de execuções de health checks."""
+    name = request.args.get('name')
+    limit = request.args.get('limit', 100, type=int)
+    
+    return jsonify({
+        'history': health_check_manager.get_history(name=name, limit=limit),
+        'count': len(health_check_manager.history)
+    })
+
+
+def get_health_check_manager():
+    """Retorna o health check manager para uso externo."""
+    return health_check_manager
