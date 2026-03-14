@@ -31,6 +31,7 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Plugin System** - Arquitetura extensível para customizacoes (v2.5) 🆕
 - **Health Checks Avançados** - DNS, SSL, TCP, HTTP headers, SLO, JSON validation (v2.6) 🆕
 - **Meta-Monitoring** - Self-diagnostics, watchdog, process health (v2.7) 🆕
+- **Config Watcher** - Hot-reload management via API (v2.8) 🆕
 
 ## 🚀 Quick Start
 
@@ -103,6 +104,12 @@ python main.py --log-level DEBUG --log-format text
 | `:8080/health` | Health check do monitor |
 | `:8080/status` | Status detalhado com métricas de sistema |
 | `:8080/webhooks/stats` | Estatísticas detalhadas de webhooks |
+| `:8080/meta/watchdog/start` | Iniciar watchdog do meta-monitor (admin) |
+| `:8080/config/watcher` | Status do config watcher |
+| `:8080/config/watcher/reload` | Força reload da config (write) |
+| `:8080/config/watcher/history` | Histórico de diffs |
+| `:8080/config/watcher/start` | Iniciar config watcher (admin) |
+| `:8080/config/watcher/stop` | Parar config watcher (admin) |
 | `:8081/api/v1/endpoints` | API REST de gerenciamento (v2.1) 🆕 |
 
 ## 🔧 API REST de Gerenciamento (v2.1) 🆕
@@ -640,6 +647,9 @@ mengao-monitor/
 ├── plugins_examples/    # Exemplos de plugins 🆕
 ├── health_checks.py     # Health Checks Avançados v2.6 (DNS, SSL, TCP, SLO, JSON) 🆕
 ├── test_health_checks.py # Testes v2.6 (25 test cases) 🆕
+├── meta_monitor.py      # Meta-Monitoring v2.7 (self-diagnostics) 🆕
+├── test_meta_monitor.py # Testes v2.7 (20 test cases) 🆕
+├── test_config_watcher.py # Testes v2.8 (18 test cases) 🆕
 │   └── example_plugins.py # SSL, SLO, Console, File, JSON, Lifecycle
 ├── requirements.txt     # Dependências
 ├── Dockerfile           # Container
@@ -659,9 +669,10 @@ mengao-monitor/
 - [x] **v2.5**: Plugin System (extensibilidade) ✅
 - [x] **v2.6**: Health Checks Avançados (DNS, SSL, TCP, SLO, JSON) ✅
 - [x] **v2.7**: Meta-Monitoring (self-diagnostics, watchdog) ✅
-- [ ] **v2.7**: Multi-region checks
-- [ ] **v2.7**: SLA reporting automático
-- [ ] **v2.8**: Interface React + WebSocket
+- [x] **v2.8**: Config Watcher API (hot-reload management) ✅
+- [ ] **v2.9**: Multi-region checks
+- [ ] **v2.9**: SLA reporting automático
+- [ ] **v3.0**: Interface React + WebSocket
 
 ## 🤝 Contribuindo
 
@@ -867,3 +878,62 @@ curl -X POST http://localhost:8080/meta/watchdog/stop
 **Watchdog:** Thread daemon que executa health checks periodicamente (padrão: 30s).
 
 **Testes:** 20+ test cases cobrindo todos os health checks e funcionalidades.
+
+## ⚙️ Config Watcher (v2.8) 🆕
+
+Gerencie o hot-reload de configuração via API:
+
+**Endpoints:**
+```bash
+# Status do config watcher
+curl http://localhost:8080/config/watcher
+
+# Força reload imediato (requer auth write)
+curl -X POST http://localhost:8080/config/watcher/reload 
+  -H "Authorization: Bearer mm_token"
+
+# Histórico de diffs
+curl http://localhost:8080/config/watcher/history?limit=10
+
+# Iniciar watcher (requer auth admin)
+curl -X POST http://localhost:8080/config/watcher/start
+
+# Parar watcher (requer auth admin)
+curl -X POST http://localhost:8080/config/watcher/stop
+```
+
+**Status Response:**
+```json
+{
+  "watcher": {
+    "config_path": "config.json",
+    "running": true,
+    "check_interval": 5,
+    "reload_count": 3,
+    "last_reload": "2026-03-14T03:00:00",
+    "error_count": 0,
+    "last_error": null,
+    "file_exists": true,
+    "file_size": 1024
+  },
+  "diff_history_size": 3,
+  "timestamp": "2026-03-14T03:00:00"
+}
+```
+
+**Histórico de Diffs:**
+```json
+{
+  "history": [
+    {
+      "timestamp": "2026-03-14T03:00:00",
+      "added": [{"key": "email", "value": {...}}],
+      "removed": [],
+      "modified": [{"key": "endpoints", "old": [...], "new": [...]}]
+    }
+  ],
+  "total": 3
+}
+```
+
+**Testes:** 18 test cases (ConfigWatcher + ConfigDiff).

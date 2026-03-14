@@ -4,12 +4,14 @@ System metrics, API status, webhook stats, and dashboard with Chart.js.
 v2.1: Token-based authentication
 v2.3: Middleware (CORS, rate limiting, request logging)
 v2.4: Circuit Breaker pattern para endpoints
-v2.7: Meta-Monitoring (self-diagnostics, watchdog) 🆕
+v2.7: Meta-Monitoring (self-diagnostics, watchdog)
+v2.8: Config Watcher endpoints (hot-reload management) 🆕
 """
 
 from flask import Flask, jsonify, Response, request
 import os
 from datetime import datetime
+from typing import Optional
 
 from dashboard_v2 import render_dashboard_v2
 from system_metrics import SystemMetricsCollector
@@ -19,6 +21,7 @@ from circuit_breaker import get_circuit_manager, CircuitBreakerConfig
 from plugins import PluginManager
 from health_checks import HealthCheckManager
 from meta_monitor import get_meta_monitor
+from config_watcher import ConfigWatcher, ConfigDiff
 
 app = Flask(__name__)
 
@@ -79,7 +82,7 @@ def health():
     return jsonify({
         'status': 'healthy',
         'service': 'mengao-monitor',
-        'version': '2.1.0',
+        'version': '2.8.0',
         'timestamp': datetime.now().isoformat(),
         'auth_enabled': is_auth_enabled()
     })
@@ -663,3 +666,116 @@ def meta_watchdog_stop():
 def get_meta_monitor_instance():
     """Retorna instância do meta-monitor para uso externo."""
     return meta_monitor
+
+
+# ===== CONFIG WATCHER ENDPOINTS (v2.8) 🆕
+
+config_watcher_instance: Optional[ConfigWatcher] = None
+config_diff_history: list = []
+max_diff_history = 100
+
+
+def get_config_watcher() -> Optional[ConfigWatcher]:
+    """Retorna instância do config watcher."""
+    return config_watcher_instance
+
+
+def set_config_watcher(watcher: ConfigWatcher):
+    """Define instância global do config watcher."""
+    global config_watcher_instance
+    config_watcher_instance = watcher
+
+
+@app.route('/config/watcher')
+@optional_auth
+def config_watcher_status():
+    """Status do config watcher."""
+    if not config_watcher_instance:
+        return jsonify({'error': 'Config watcher not configured'}), 404
+    
+    return jsonify({
+        'watcher': config_watcher_instance.get_stats(),
+        'diff_history_size': len(config_diff_history),
+        'timestamp': datetime.now().isoformat()
+    })
+
+
+@app.route('/config/watcher/reload', methods=['POST'])
+@require_auth(scope='write')
+def config_watcher_force_reload():
+    """Força reload imediato da configuração."""
+    if not config_watcher_instance:
+        return jsonify({'error': 'Config watcher not configured'}), 404
+    
+    success = config_watcher_instance.force_reload()
+    
+    if success:
+        return jsonify({
+            'message': 'Config reloaded successfully',
+            'reload_count': config_watcher_instance._reload_count,
+            'last_reload': config_watcher_instance._last_reload.isoformat() if config_watcher_instance._last_reload else None
+        })
+    else:
+        return jsonify({
+            'error': 'Failed to reload config',
+            'last_error': config_watcher_instance._last_error
+        }), 500
+
+
+@app.route('/config/watcher/history')
+@optional_auth
+def config_watcher_history():
+    """Histórico de diffs de configuração."""
+    limit = request.args.get('limit', 20, type=int)
+    
+    return jsonify({
+        'history': config_diff_history[-limit:],
+        'total': len(config_diff_history)
+    })
+
+
+@app.route('/config/watcher/start', methods=['POST'])
+@require_auth(scope='admin')
+def config_watcher_start():
+    """Inicia o config watcher."""
+    if not config_watcher_instance:
+        return jsonify({'error': 'Config watcher not configured'}), 404
+    
+    if config_watcher_instance._running:
+        return jsonify({'message': 'Config watcher already running'})
+    
+    config_watcher_instance.start()
+    return jsonify({
+        'message': 'Config watcher started',
+        'check_interval': config_watcher_instance.check_interval
+    })
+
+
+@app.route('/config/watcher/stop', methods=['POST'])
+@require_auth(scope='admin')
+def config_watcher_stop():
+    """Para o config watcher."""
+    if not config_watcher_instance:
+        return jsonify({'error': 'Config watcher not configured'}), 404
+    
+    config_watcher_instance.stop()
+    return jsonify({'message': 'Config watcher stopped'})
+
+
+def record_config_diff(old_config: dict, new_config: dict):
+    """Registra diff de configuração no histórico."""
+    diff = ConfigDiff.diff(old_config, new_config)
+    
+    entry = {
+        'timestamp': datetime.now().isoformat(),
+        'added': diff['added'],
+        'removed': diff['removed'],
+        'modified': diff['modified']
+    }
+    
+    global config_diff_history
+    config_diff_history.append(entry)
+    
+    # Manter apenas últimos N diffs
+    if len(config_diff_history) > max_diff_history:
+        config_diff_history = config_diff_history[-max_diff_history:]
