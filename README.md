@@ -38,6 +38,7 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Alert Escalation** - Escalação automática L1→L2→L3 com políticas (v3.2) 🆕
 - **Dashboard v3** - Interface em tempo real com WebSocket (v3.3) 🆕
 - **Health Check Templates** - Templates pré-definidos para REST, GraphQL, K8s, Elasticsearch (v3.4) 🆕
+- **Dependency Graph** - Mapeamento de dependências e análise de impacto de falhas (v3.6) 🆕
 
 ## 🚀 Quick Start
 
@@ -694,6 +695,75 @@ mengao-monitor/
 - [x] **v3.3**: Dashboard v3 com WebSocket em tempo real ✅ 🆕
 - [x] **v3.4**: Health Check Templates (REST, GraphQL, presets) ✅ 🆕
 - [x] **v3.5**: Data Layer (persistência unificada SQLite) ✅ 🆕
+- [x] **v3.6**: Dependency Graph (mapeamento de dependências e impacto) ✅ 🆕
+
+### Data Layer (v3.5)
+
+Persistência unificada com SQLite:
+
+- **Health checks**: histórico completo de verificações
+- **Alertas**: tracking de alertas disparados
+- **Métricas**: séries temporais de métricas
+- **Incidentes**: registro e resolução de incidentes
+- **MTTR**: cálculo automático de Mean Time To Recovery
+- **Percentis**: p50, p95, p99 de response time
+- **Uptime**: cálculo de uptime por período
+- **Maintenance**: VACUUM, cleanup de dados antigos
+
+Endpoints:
+- `GET /data/stats` - Estatísticas do banco
+- `GET /data/checks` - Health checks persistidos
+- `GET /data/checks/uptime/<api>` - Uptime de uma API
+- `GET /data/alerts` - Alertas persistidos
+- `GET /data/metrics?name=X` - Métricas persistidas
+- `GET /data/metrics/aggregate?name=X&agg=avg` - Agregação
+- `GET /data/incidents` - Incidentes
+- `POST /data/incidents` - Criar incidente
+- `POST /data/incidents/<id>/resolve` - Resolver incidente
+- `GET /data/mttr` - MTTR médio
+- `POST /data/cleanup` - Limpar dados antigos
+- `POST /data/vacuum` - Otimizar banco
+
+### Dependency Graph (v3.6) 🆕
+
+Mapeia dependências entre endpoints e calcula impacto de falhas:
+
+- **Grafo de dependências**: nós (endpoints) + arestas (dependências)
+- **Análise de impacto**: quantos serviços são afetados se X cair
+- **Detecção de ciclos**: identifica dependências circulares
+- **Caminhos críticos**: quais endpoints são mais críticos
+- **Thread-safe**: operações concorrentes seguras
+
+Endpoints:
+- `GET /graph/nodes` - Lista todos os nós
+- `POST /graph/nodes` - Adiciona nó
+- `DELETE /graph/nodes/<name>` - Remove nó
+- `POST /graph/dependencies` - Adiciona dependência
+- `DELETE /graph/dependencies` - Remove dependência
+- `GET /graph/impact/<name>` - Impacto de falha
+- `GET /graph/cycles` - Ciclos detectados
+- `GET /graph/critical` - Endpoints por criticidade
+- `GET /graph/topology` - Topologia para visualização
+- `GET /graph/dependencies/<name>` - Dependências de um nó
+- `GET /graph/dependents/<name>` - Quem depende de um nó
+
+Exemplo de uso:
+```python
+from dependency_graph import DependencyGraph
+
+graph = DependencyGraph()
+graph.add_node("frontend", "https://frontend.com")
+graph.add_node("api", "https://api.com")
+graph.add_node("db", "https://db.com")
+
+graph.add_dependency("frontend", "api")
+graph.add_dependency("api", "db")
+
+# Se o DB cair, quem é impactado?
+report = graph.calculate_impact("db")
+print(f"Impacto: {report.total_affected} serviços")
+print(f"Severidade: {report.severity}")  # high
+```
 
 ## 🤝 Contribuindo
 

@@ -1587,6 +1587,167 @@ def data_vacuum():
     return jsonify({'message': 'VACUUM completed'})
 
 
+from dependency_graph import DependencyGraph
+
+dependency_graph = DependencyGraph()
+
+# ============================================================
+# Dependency Graph Endpoints (v3.6) 🆕
+# ============================================================
+
+@app.route('/graph/nodes', methods=['GET'])
+@optional_auth
+def graph_nodes():
+    """Lista todos os nós do grafo de dependências."""
+    return jsonify({
+        'nodes': {
+            name: {
+                'url': node.url,
+                'status': node.status,
+                'response_time': node.response_time,
+                'last_check': node.last_check,
+                'dependencies': list(node.dependencies),
+                'dependents': list(node.dependents)
+            }
+            for name, node in dependency_graph.nodes.items()
+        },
+        'stats': dependency_graph.get_stats()
+    })
+
+
+@app.route('/graph/nodes', methods=['POST'])
+@require_auth(scope='write')
+def graph_add_node():
+    """Adiciona nó ao grafo de dependências."""
+    data = request.get_json()
+    if not data or 'name' not in data or 'url' not in data:
+        return jsonify({'error': 'Missing name or url'}), 400
+    
+    dependency_graph.add_node(
+        name=data['name'],
+        url=data['url'],
+        metadata=data.get('metadata')
+    )
+    
+    return jsonify({'message': f'Node added: {data["name"]}'}), 201
+
+
+@app.route('/graph/nodes/<name>', methods=['DELETE'])
+@require_auth(scope='write')
+def graph_remove_node(name):
+    """Remove nó do grafo de dependências."""
+    if dependency_graph.remove_node(name):
+        return jsonify({'message': f'Node removed: {name}'})
+    return jsonify({'error': f'Node not found: {name}'}), 404
+
+
+@app.route('/graph/dependencies', methods=['POST'])
+@require_auth(scope='write')
+def graph_add_dependency():
+    """Adiciona relação de dependência."""
+    data = request.get_json()
+    if not data or 'dependent' not in data or 'dependency' not in data:
+        return jsonify({'error': 'Missing dependent or dependency'}), 400
+    
+    if dependency_graph.add_dependency(data['dependent'], data['dependency']):
+        return jsonify({'message': f'{data["dependent"]} depends on {data["dependency"]}'}), 201
+    return jsonify({'error': 'One or both nodes not found'}), 404
+
+
+@app.route('/graph/dependencies', methods=['DELETE'])
+@require_auth(scope='write')
+def graph_remove_dependency():
+    """Remove relação de dependência."""
+    data = request.get_json()
+    if not data or 'dependent' not in data or 'dependency' not in data:
+        return jsonify({'error': 'Missing dependent or dependency'}), 400
+    
+    if dependency_graph.remove_dependency(data['dependent'], data['dependency']):
+        return jsonify({'message': f'{data["dependent"]} no longer depends on {data["dependency"]}'})
+    return jsonify({'error': 'Dependency not found'}), 404
+
+
+@app.route('/graph/impact/<name>')
+@optional_auth
+def graph_impact(name):
+    """Calcula impacto de falha de um endpoint."""
+    report = dependency_graph.calculate_impact(name)
+    
+    if not report:
+        return jsonify({'error': f'Node not found: {name}'}), 404
+    
+    return jsonify({
+        'failed_endpoint': report.failed_endpoint,
+        'direct_impact': report.direct_impact,
+        'transitive_impact': report.transitive_impact,
+        'total_affected': report.total_affected,
+        'severity': report.severity,
+        'timestamp': report.timestamp
+    })
+
+
+@app.route('/graph/cycles')
+@optional_auth
+def graph_cycles():
+    """Detecta ciclos no grafo (dependências circulares)."""
+    cycles = dependency_graph.find_cycles()
+    return jsonify({
+        'cycles': cycles,
+        'count': len(cycles)
+    })
+
+
+@app.route('/graph/critical')
+@optional_auth
+def graph_critical_paths():
+    """Retorna endpoints ordenados por criticidade."""
+    paths = dependency_graph.get_critical_paths()
+    return jsonify({
+        'critical_paths': [
+            {'name': name, 'dependent_count': count}
+            for name, count in paths
+        ]
+    })
+
+
+@app.route('/graph/topology')
+@optional_auth
+def graph_topology():
+    """Retorna topologia do grafo para visualização."""
+    return jsonify(dependency_graph.get_topology())
+
+
+@app.route('/graph/dependencies/<name>')
+@optional_auth
+def graph_node_dependencies(name):
+    """Retorna dependências de um nó."""
+    recursive = request.args.get('recursive', 'false').lower() == 'true'
+    deps = dependency_graph.get_dependencies(name, recursive=recursive)
+    return jsonify({
+        'node': name,
+        'dependencies': list(deps),
+        'recursive': recursive
+    })
+
+
+@app.route('/graph/dependents/<name>')
+@optional_auth
+def graph_node_dependents(name):
+    """Retorna quem depende de um nó."""
+    recursive = request.args.get('recursive', 'false').lower() == 'true'
+    deps = dependency_graph.get_dependents(name, recursive=recursive)
+    return jsonify({
+        'node': name,
+        'dependents': list(deps),
+        'recursive': recursive
+    })
+
+
+def get_dependency_graph():
+    """Retorna instância do grafo de dependências para uso externo."""
+    return dependency_graph
+
+
 def get_data_layer():
     """Retorna instância do data layer para uso externo."""
     return data_layer
