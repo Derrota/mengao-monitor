@@ -37,6 +37,7 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Notification Manager** - Sistema unificado de notificações (v3.1) 🆕
 - **Alert Escalation** - Escalação automática L1→L2→L3 com políticas (v3.2) 🆕
 - **Dashboard v3** - Interface em tempo real com WebSocket (v3.3) 🆕
+- **Health Check Templates** - Templates pré-definidos para REST, GraphQL, K8s, Elasticsearch (v3.4) 🆕
 
 ## 🚀 Quick Start
 
@@ -664,6 +665,8 @@ mengao-monitor/
 ├── test_notification_manager.py # Testes v3.1 (25 test cases) 🆕
 ├── alert_escalation.py      # Alert Escalation v3.2 (escalação automática) 🆕
 ├── test_alert_escalation.py # Testes v3.2 (27 test cases) 🆕
+├── health_check_templates.py # Health Check Templates v3.4 (REST, GraphQL, presets) 🆕
+├── test_health_check_templates.py # Testes v3.4 (52 test cases) 🆕
 │   └── example_plugins.py # SSL, SLO, Console, File, JSON, Lifecycle
 ├── requirements.txt     # Dependências
 ├── Dockerfile           # Container
@@ -689,6 +692,7 @@ mengao-monitor/
 - [x] **v3.1**: Notification Manager (sistema unificado) ✅ 🆕
 - [x] **v3.2**: Alert Escalation (escalação automática L1→L2→L3) ✅ 🆕
 - [x] **v3.3**: Dashboard v3 com WebSocket em tempo real ✅ 🆕
+- [x] **v3.4**: Health Check Templates (REST, GraphQL, presets) ✅ 🆕
 
 ## 🤝 Contribuindo
 
@@ -1407,3 +1411,86 @@ html = dashboard.render_html(apis=apis, alerts=alerts)
 ```
 
 **Testes:** 40 test cases cobrindo renderização, listas, cálculos e integração.
+
+## 📋 Health Check Templates (v3.4) 🆕
+
+Templates pré-definidos para validar APIs comuns com assertions configuráveis:
+
+**Templates disponíveis:**
+- **RESTTemplate** - APIs REST (status code, JSON schema, response time, headers)
+- **GraphQLTemplate** - APIs GraphQL (query validation, error detection)
+- **Presets** - Kubernetes healthz, Elasticsearch, PostgreSQL
+
+**Exemplo rápido:**
+```python
+from health_check_templates import TemplateChecker, RESTTemplate, GraphQLTemplate
+
+checker = TemplateChecker()
+
+# REST API
+checker.register("my-api", RESTTemplate(
+    name="my-api",
+    url="https://api.example.com/health",
+    expected_status=200,
+    max_response_time=2.0,
+    json_schema={"status": str, "version": str},
+    required_headers=["X-Request-Id"]
+))
+
+# GraphQL
+checker.register("my-gql", GraphQLTemplate(
+    name="my-gql",
+    url="https://api.example.com/graphql",
+    query="{ users { id name } }",
+    max_response_time=3.0,
+    expect_no_errors=True
+))
+
+# Executar checks
+results = checker.check_all()
+for name, result in results.items():
+    print(f"{name}: {'✅' if result.passed else '❌'} ({result.response_time:.3f}s)")
+```
+
+**Assertions suportados:**
+- `STATUS_CODE` - Verifica status HTTP (exato ou lista)
+- `RESPONSE_TIME` - Verifica latência máxima
+- `JSON_SCHEMA` - Valida estrutura JSON (tipos, chaves)
+- `JSON_PATH` - Verifica valor em path específico (eq, gt, lt, contains, regex)
+- `HEADER` - Verifica presença/valor de headers
+- `BODY_CONTAINS` - Verifica texto no body
+- `BODY_REGEX` - Verifica regex no body
+- `CUSTOM` - Assertion customizado via callable
+
+**Presets:**
+```python
+from health_check_templates import (
+    create_kubernetes_healthz,
+    create_elasticsearch_health,
+    create_rest_template
+)
+
+# Kubernetes healthz
+checker.register("k8s", create_kubernetes_healthz("http://localhost:8080/healthz"))
+
+# Elasticsearch cluster health
+checker.register("es", create_elasticsearch_health("http://localhost:9200"))
+
+# Quick REST template
+checker.register("api", create_rest_template(
+    name="api",
+    url="https://api.example.com",
+    expected_status=200,
+    max_response_time=1.0
+))
+```
+
+**TemplateChecker features:**
+- `register(name, template)` - Registra template
+- `check(name)` - Executa check específico
+- `check_all()` - Executa todos os checks
+- `get_history(name, limit)` - Histórico de resultados
+- `get_uptime(name, window)` - Uptime percentual
+- `get_stats()` - Estatísticas globais
+
+**Testes:** 52 test cases cobrindo assertions, templates, checker, factory functions e edge cases.
