@@ -36,6 +36,7 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **WebSocket** - Updates em tempo real para dashboard (v3.0) 🆕
 - **Notification Manager** - Sistema unificado de notificações (v3.1) 🆕
 - **Alert Escalation** - Escalação automática L1→L2→L3 com políticas (v3.2) 🆕
+- **Dashboard v3** - Interface em tempo real com WebSocket (v3.3) 🆕
 
 ## 🚀 Quick Start
 
@@ -104,6 +105,7 @@ python main.py --log-level DEBUG --log-format text
 |----------|-----------|
 | `:9090/metrics` | Métricas Prometheus (APIs + Sistema + Webhooks) |
 | `:8080/` | Dashboard web v2 com gráficos Chart.js |
+| `:8080/dashboard/v3` | Dashboard v3 com WebSocket em tempo real 🆕 |
 | `:8080/apis` | Status JSON das APIs |
 | `:8080/health` | Health check do monitor |
 | `:8080/status` | Status detalhado com métricas de sistema |
@@ -686,6 +688,7 @@ mengao-monitor/
 - [x] **v3.0**: WebSocket para updates em tempo real ✅ 🆕
 - [x] **v3.1**: Notification Manager (sistema unificado) ✅ 🆕
 - [x] **v3.2**: Alert Escalation (escalação automática L1→L2→L3) ✅ 🆕
+- [x] **v3.3**: Dashboard v3 com WebSocket em tempo real ✅ 🆕
 
 ## 🤝 Contribuindo
 
@@ -1350,3 +1353,57 @@ Quando um alerta é reconhecido, ele para de escalar. Isso permite que a equipe 
 - L3 sempre escala mesmo em quiet hours (opcional)
 
 **Testes:** 27 test cases cobrindo políticas, escalação, acknowledge, resolve, rate limiting e edge cases.
+
+## 🖥️ Dashboard v3 (v3.3) 🆕
+
+Dashboard moderno com updates em tempo real via WebSocket:
+
+**Features:**
+- **WebSocket nativo** - Updates instantâneos sem polling
+- **Gráficos Chart.js** - Response time e métricas de sistema em tempo real
+- **Alert timeline** - Visualização de alertas em escalação (L1/L2/L3)
+- **Notification feed** - Stream de notificações ao vivo
+- **Dark theme rubro-negro** - Cores do Mengão 🦞
+- **Auto-reconnect** - Reconexão automática com backoff exponencial
+- **Responsive** - Funciona em desktop e mobile
+
+**Endpoint:**
+```
+http://localhost:8080/dashboard/v3
+```
+
+**Canais WebSocket:**
+- `status` - Updates de status das APIs
+- `metrics` - Métricas de sistema (CPU, memória, disco)
+- `alerts` - Alertas em escalação
+- `notifications` - Feed de notificações
+
+**Arquitetura:**
+```
+Browser ←→ WebSocket (ws://localhost:8082)
+                ↓
+         Dashboard v3 (HTML/JS)
+                ↓
+    ┌───────────┼───────────┐
+    ↓           ↓           ↓
+Status API  Metrics    Alerts
+    ↓           ↓           ↓
+Chart.js    Chart.js   Alert List
+```
+
+**Configuração:**
+```python
+from dashboard_v3 import DashboardV3, DashboardConfig
+
+config = DashboardConfig(
+    title="Mengão Monitor",
+    websocket_url="ws://localhost:8082",
+    show_flamengo_badge=True,
+    chart_history_points=60
+)
+
+dashboard = DashboardV3(config)
+html = dashboard.render_html(apis=apis, alerts=alerts)
+```
+
+**Testes:** 40 test cases cobrindo renderização, listas, cálculos e integração.

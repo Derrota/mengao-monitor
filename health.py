@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Optional
 
 from dashboard_v2 import render_dashboard_v2
+from dashboard_v3 import DashboardV3, DashboardConfig
 from system_metrics import SystemMetricsCollector
 from auth import auth_manager, require_auth, optional_auth, AuthToken
 from middleware import setup_middleware
@@ -51,6 +52,7 @@ MIDDLEWARE_CONFIG = {
 app = setup_middleware(app, MIDDLEWARE_CONFIG)
 system_collector = SystemMetricsCollector()
 plugin_manager = PluginManager()  # Plugin System v2.5
+dashboard_v3 = DashboardV3()  # Dashboard v3.3 com WebSocket
 
 # Estado global do monitor (será injetado)
 monitor_state = {
@@ -79,6 +81,60 @@ def dashboard():
         webhook_stats = monitor_state['webhook_sender'].get_stats()
     
     html = render_dashboard_v2(monitor_state, webhook_stats)
+    return Response(html, mimetype='text/html')
+
+
+@app.route('/dashboard/v3')
+@optional_auth
+def dashboard_v3_endpoint():
+    """Dashboard HTML v3 com WebSocket em tempo real."""
+    from alert_escalation import get_escalation_manager
+    from notification_manager import get_notification_manager
+    
+    # Coleta dados
+    webhook_stats = {}
+    if monitor_state.get('webhook_sender'):
+        webhook_stats = monitor_state['webhook_sender'].get_stats()
+    
+    # APIs
+    apis = monitor_state.get('apis', [])
+    
+    # Alertas ativos
+    escalation_manager = get_escalation_manager()
+    alerts = [{
+        'id': a.id,
+        'endpoint': a.endpoint,
+        'level': a.current_level.value,
+        'status': a.status.value,
+        'reason': a.message,
+        'created_at': a.created_at.isoformat()
+    } for a in escalation_manager.get_active_alerts()]
+    
+    # Notificações recentes
+    notif_manager = get_notification_manager()
+    notifications = notif_manager.get_history(limit=20)
+    
+    # WebSocket status
+    ws_server = get_websocket_server()
+    websocket_status = ws_server.get_stats()
+    
+    # System metrics
+    system_metrics_data = system_collector.collect()
+    system_metrics = {
+        'cpu': system_metrics_data.cpu_percent,
+        'memory': system_metrics_data.memory_percent,
+        'disk': system_metrics_data.disk_percent
+    }
+    
+    # Renderiza dashboard v3
+    html = dashboard_v3.render_html(
+        apis=apis,
+        alerts=alerts,
+        notifications=notifications,
+        websocket_status=websocket_status,
+        system_metrics=system_metrics
+    )
+    
     return Response(html, mimetype='text/html')
 
 
