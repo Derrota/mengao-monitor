@@ -21,7 +21,7 @@ from metrics import PrometheusMetrics, start_metrics_server
 from webhooks import WebhookSender
 from history import UptimeHistory
 from email_alerts import EmailAlertSender
-from health import update_state, set_webhook_sender, start_health_server, enable_auth, create_bootstrap_token
+from health import update_state, set_webhook_sender, start_health_server, enable_auth, create_bootstrap_token, get_data_layer
 from auth import auth_manager
 from circuit_breaker import get_circuit_manager, CircuitBreakerConfig
 from websocket_server import (
@@ -211,6 +211,21 @@ class MengaoMonitor:
                         self.history.record_check(result)
                     except Exception as e:
                         self.logger.error(f"Failed to record history: {e}")
+                
+                # Record in data layer (v3.5)
+                try:
+                    dl = get_data_layer()
+                    dl.record_check(
+                        api_name=endpoint.name,
+                        url=result["url"],
+                        status=result["status"],
+                        response_time_ms=result["response_time_ms"],
+                        status_code=result["status_code"],
+                        error=result.get("error"),
+                        metadata={"method": endpoint.method}
+                    )
+                except Exception as e:
+                    self.logger.error(f"Failed to record data layer: {e}")
                 
                 if not success:
                     self.errors_count += 1

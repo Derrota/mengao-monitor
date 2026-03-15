@@ -693,6 +693,7 @@ mengao-monitor/
 - [x] **v3.2**: Alert Escalation (escalação automática L1→L2→L3) ✅ 🆕
 - [x] **v3.3**: Dashboard v3 com WebSocket em tempo real ✅ 🆕
 - [x] **v3.4**: Health Check Templates (REST, GraphQL, presets) ✅ 🆕
+- [x] **v3.5**: Data Layer (persistência unificada SQLite) ✅ 🆕
 
 ## 🤝 Contribuindo
 
@@ -947,6 +948,64 @@ curl -X PUT http://localhost:8080/sla/targets \
 - **CSV** - Para planilhas e análises
 
 **Testes:** 25 test cases cobrindo métricas, incidentes, exports e thread safety.
+
+## 💾 Data Layer - Persistência Unificada (v3.5) 🆕
+
+Camada de persistência unificada com SQLite para todos os dados do Mengão Monitor.
+
+### Features
+- **Health Checks** - Histórico de verificações com uptime/response time
+- **Alerts** - Alertas ativos, acknowledged, resolvidos com escalação
+- **Metrics** - Time-series de métricas com agregações
+- **Incidents** - Incidentes com MTTR automático
+- **System State** - Key-value store para estado do sistema
+
+### API
+
+```python
+from data_layer import DataLayer, QueryFilter
+
+# Inicialização
+dl = DataLayer(db_path="mengao_monitor.db")
+
+# Health checks
+dl.record_check("api_name", "https://api.com", "up", response_time_ms=150)
+uptime = dl.get_uptime("api_name", hours=24)  # 99.95
+p95 = dl.get_percentile_response_time("api_name", percentile=95)
+
+# Alerts
+dl.record_alert("alert_001", "api", "L1", "API down")
+dl.escalate_alert("alert_001", "L2")
+dl.update_alert_status("alert_001", "resolved")
+
+# Metrics
+dl.record_metric("response_time", 150.5, labels={"endpoint": "/users"})
+avg = dl.get_metric_aggregate("response_time", "avg", hours=24)
+
+# Incidents
+dl.record_incident("inc_001", "api", "high", "Outage")
+dl.resolve_incident("inc_001", "Fixed", root_cause="Memory leak")
+mttr = dl.get_mttr()  # MTTR médio em segundos
+
+# System state
+dl.set_state("last_check", "2026-03-15T12:00:00")
+dl.get_state("last_check")  # "2026-03-15T12:00:00"
+
+# Manutenção
+dl.cleanup_old_data(days=30)
+dl.vacuum()
+dl.backup("backup.db")
+```
+
+### Thread Safety
+- Cada thread tem sua própria conexão SQLite
+- WAL mode para concorrência
+- Locks para operações de escrita
+
+### Performance
+- Indexes otimizados para queries comuns
+- PRAGMA: WAL, NORMAL sync, 64MB cache
+- VACUUM automático configurável
 
 ## 🔌 WebSocket para Updates em Tempo Real (v3.0) 🆕
 

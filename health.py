@@ -1387,3 +1387,206 @@ def escalation_stats():
     manager = get_escalation_manager()
     
     return jsonify(manager.get_stats())
+
+
+# ============================================================
+# Data Layer Endpoints (v3.5) 🆕
+# ============================================================
+
+from data_layer import DataLayer, QueryFilter
+
+data_layer = DataLayer(db_path="mengao_monitor.db")
+
+
+@app.route('/data/stats')
+@optional_auth
+def data_layer_stats():
+    """Estatísticas do data layer."""
+    stats = data_layer.get_stats()
+    return jsonify({
+        'total_checks': stats.total_checks,
+        'total_alerts': stats.total_alerts,
+        'total_metrics': stats.total_metrics,
+        'total_incidents': stats.total_incidents,
+        'db_size_bytes': stats.db_size_bytes,
+        'last_vacuum': stats.last_vacuum
+    })
+
+
+@app.route('/data/checks')
+@optional_auth
+def data_checks():
+    """Busca health checks persistidos."""
+    api_name = request.args.get('api_name')
+    status = request.args.get('status')
+    limit = request.args.get('limit', 100, type=int)
+    
+    qf = QueryFilter(api_name=api_name, status=status, limit=limit)
+    checks = data_layer.get_checks(qf)
+    
+    return jsonify({'checks': checks, 'count': len(checks)})
+
+
+@app.route('/data/checks/uptime/<api_name>')
+@optional_auth
+def data_uptime(api_name):
+    """Calcula uptime de uma API."""
+    hours = request.args.get('hours', 24, type=int)
+    uptime = data_layer.get_uptime(api_name, hours)
+    avg_response = data_layer.get_avg_response_time(api_name, hours)
+    p95 = data_layer.get_percentile_response_time(api_name, 95, hours)
+    
+    return jsonify({
+        'api_name': api_name,
+        'period_hours': hours,
+        'uptime_percent': uptime,
+        'avg_response_time_ms': avg_response,
+        'p95_response_time_ms': p95
+    })
+
+
+@app.route('/data/alerts')
+@optional_auth
+def data_alerts():
+    """Busca alertas persistidos."""
+    api_name = request.args.get('api_name')
+    status = request.args.get('status')
+    limit = request.args.get('limit', 50, type=int)
+    
+    alerts = data_layer.get_alerts(api_name=api_name, status=status, limit=limit)
+    return jsonify({'alerts': alerts, 'count': len(alerts)})
+
+
+@app.route('/data/metrics')
+@optional_auth
+def data_metrics():
+    """Busca métricas persistidas."""
+    metric_name = request.args.get('name')
+    if not metric_name:
+        return jsonify({'error': 'Missing metric name'}), 400
+    
+    hours = request.args.get('hours', 24, type=int)
+    limit = request.args.get('limit', 1000, type=int)
+    
+    cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+    metrics = data_layer.get_metrics(metric_name, start_time=cutoff, limit=limit)
+    
+    return jsonify({'metrics': metrics, 'count': len(metrics)})
+
+
+@app.route('/data/metrics/aggregate')
+@optional_auth
+def data_metrics_aggregate():
+    """Agrega métricas."""
+    metric_name = request.args.get('name')
+    if not metric_name:
+        return jsonify({'error': 'Missing metric name'}), 400
+    
+    aggregation = request.args.get('agg', 'avg')
+    hours = request.args.get('hours', 24, type=int)
+    
+    result = data_layer.get_metric_aggregate(metric_name, aggregation, hours)
+    
+    return jsonify({
+        'metric_name': metric_name,
+        'aggregation': aggregation,
+        'period_hours': hours,
+        'value': result
+    })
+
+
+@app.route('/data/incidents')
+@optional_auth
+def data_incidents():
+    """Busca incidentes persistidos."""
+    api_name = request.args.get('api_name')
+    status = request.args.get('status')
+    limit = request.args.get('limit', 50, type=int)
+    
+    incidents = data_layer.get_incidents(api_name=api_name, status=status, limit=limit)
+    return jsonify({'incidents': incidents, 'count': len(incidents)})
+
+
+@app.route('/data/incidents', methods=['POST'])
+@require_auth(scope='write')
+def data_incidents_create():
+    """Cria um incidente."""
+    data = request.get_json()
+    if not data or 'api_name' not in data or 'title' not in data:
+        return jsonify({'error': 'Missing api_name or title'}), 400
+    
+    incident_id = f"inc_{int(time.time())}"
+    data_layer.record_incident(
+        incident_id=incident_id,
+        api_name=data['api_name'],
+        severity=data.get('severity', 'medium'),
+        title=data['title'],
+        description=data.get('description'),
+        metadata=data.get('metadata')
+    )
+    
+    return jsonify({'incident_id': incident_id, 'message': 'Incident created'}), 201
+
+
+@app.route('/data/incidents/<incident_id>/resolve', methods=['POST'])
+@require_auth(scope='write')
+def data_incidents_resolve(incident_id):
+    """Resolve um incidente."""
+    data = request.get_json() or {}
+    resolution = data.get('resolution', 'Resolved via API')
+    root_cause = data.get('root_cause')
+    
+    if data_layer.resolve_incident(incident_id, resolution, root_cause):
+        return jsonify({'message': f'Incident {incident_id} resolved'})
+    return jsonify({'error': 'Incident not found'}), 404
+
+
+@app.route('/data/mttr')
+@optional_auth
+def data_mttr():
+    """Calcula MTTR médio."""
+    api_name = request.args.get('api_name')
+    hours = request.args.get('hours', 168, type=int)  # Default: 1 semana
+    
+    mttr = data_layer.get_mttr(api_name=api_name, hours=hours)
+    
+    return jsonify({
+        'api_name': api_name,
+        'period_hours': hours,
+        'mttr_seconds': mttr,
+        'mttr_human': f"{int(mttr // 3600)}h {int((mttr % 3600) // 60)}m" if mttr else None
+    })
+
+
+@app.route('/data/cleanup', methods=['POST'])
+@require_auth(scope='admin')
+def data_cleanup():
+    """Remove dados antigos (requer admin)."""
+    data = request.get_json() or {}
+    days = data.get('days', 30)
+    
+    data_layer.cleanup_old_data(days=days)
+    stats = data_layer.get_stats()
+    
+    return jsonify({
+        'message': f'Cleaned up data older than {days} days',
+        'stats': {
+            'total_checks': stats.total_checks,
+            'total_alerts': stats.total_alerts,
+            'total_metrics': stats.total_metrics,
+            'total_incidents': stats.total_incidents
+        }
+    })
+
+
+@app.route('/data/vacuum', methods=['POST'])
+@require_auth(scope='admin')
+def data_vacuum():
+    """Executa VACUUM no banco (requer admin)."""
+    data_layer.vacuum()
+    return jsonify({'message': 'VACUUM completed'})
+
+
+def get_data_layer():
+    """Retorna instância do data layer para uso externo."""
+    return data_layer
