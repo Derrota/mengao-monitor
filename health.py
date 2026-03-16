@@ -2145,3 +2145,165 @@ def exporters_clear_history():
     """Limpa histórico de exportações."""
     exporter_manager.clear_history()
     return jsonify({'message': 'History cleared'})
+
+
+# =============================================================================
+# Metrics Aggregator v3.9 Endpoints
+# =============================================================================
+
+from metrics_aggregator import (
+    get_aggregator as _get_aggregator,
+    AggregationWindow as _AggWindow,
+    MetricThreshold as _MetricThreshold,
+)
+
+def get_metrics_aggregator():
+    """Retorna instância do aggregator (lazy init)."""
+    agg = _get_aggregator()
+    if not agg._running:
+        agg.start()
+    return agg
+
+
+@app.route('/aggregator/stats')
+@require_auth()
+def aggregator_stats():
+    """Estatísticas do Metrics Aggregator."""
+    agg = get_metrics_aggregator()
+    return jsonify(agg.get_stats())
+
+
+@app.route('/aggregator/metrics')
+@require_auth()
+def aggregator_metrics():
+    """Lista métricas rastreadas."""
+    agg = get_metrics_aggregator()
+    return jsonify({'metrics': agg.get_metric_names()})
+
+
+@app.route('/aggregator/record', methods=['POST'])
+@require_auth(scope='admin')
+def aggregator_record():
+    """Registra ponto de métrica."""
+    data = request.get_json()
+    if not data or 'name' not in data or 'value' not in data:
+        return jsonify({'error': 'name and value required'}), 400
+    agg = get_metrics_aggregator()
+    agg.record(data['name'], float(data['value']), data.get('labels'))
+    return jsonify({'message': 'recorded'})
+
+
+@app.route('/aggregator/aggregate/<metric_name>')
+@require_auth()
+def aggregator_aggregate(metric_name):
+    """Agrega métrica em janela temporal."""
+    window_name = request.args.get('window', 'MINUTE_1')
+    try:
+        window = _AggWindow[window_name]
+    except KeyError:
+        return jsonify({'error': f'Invalid window: {window_name}. Use: {[w.name for w in _AggWindow]}'}), 400
+    agg = get_metrics_aggregator()
+    result = agg.aggregate(metric_name, window)
+    if result is None:
+        return jsonify({'error': 'No data'}), 404
+    return jsonify(result.to_dict())
+
+
+@app.route('/aggregator/aggregate-all/<metric_name>')
+@require_auth()
+def aggregator_aggregate_all(metric_name):
+    """Agrega métrica em todas as janelas."""
+    agg = get_metrics_aggregator()
+    result = agg.aggregate_all_windows(metric_name)
+    return jsonify(result)
+
+
+@app.route('/aggregator/anomalies')
+@require_auth()
+def aggregator_anomalies():
+    """Anomalias recentes."""
+    limit = request.args.get('limit', 50, type=int)
+    metric = request.args.get('metric')
+    severity = request.args.get('severity')
+    agg = get_metrics_aggregator()
+    return jsonify(agg.get_recent_anomalies(limit=limit, metric_name=metric, severity=severity))
+
+
+@app.route('/aggregator/anomalies/detect', methods=['POST'])
+@require_auth(scope='admin')
+def aggregator_detect_anomalies():
+    """Força detecção de anomalias."""
+    agg = get_metrics_aggregator()
+    result = agg.detect_all_anomalies()
+    return jsonify(result)
+
+
+@app.route('/aggregator/trend/<metric_name>')
+@require_auth()
+def aggregator_trend(metric_name):
+    """Análise de tendência."""
+    window_name = request.args.get('window', 'HOUR_1')
+    try:
+        window = _AggWindow[window_name]
+    except KeyError:
+        return jsonify({'error': f'Invalid window: {window_name}'}), 400
+    agg = get_metrics_aggregator()
+    result = agg.get_trend(metric_name, window)
+    if result is None:
+        return jsonify({'error': 'Insufficient data'}), 404
+    return jsonify(result)
+
+
+@app.route('/aggregator/correlate')
+@require_auth()
+def aggregator_correlate():
+    """Correlação entre duas métricas."""
+    metric_a = request.args.get('a')
+    metric_b = request.args.get('b')
+    window_name = request.args.get('window', 'HOUR_1')
+    if not metric_a or not metric_b:
+        return jsonify({'error': 'a and b parameters required'}), 400
+    try:
+        window = _AggWindow[window_name]
+    except KeyError:
+        return jsonify({'error': f'Invalid window: {window_name}'}), 400
+    agg = get_metrics_aggregator()
+    result = agg.correlate(metric_a, metric_b, window)
+    if result is None:
+        return jsonify({'error': 'Insufficient data'}), 404
+    return jsonify(result)
+
+
+@app.route('/aggregator/thresholds', methods=['GET', 'POST'])
+@require_auth(scope='admin')
+def aggregator_thresholds():
+    """Gerencia thresholds de métricas."""
+    agg = get_metrics_aggregator()
+    if request.method == 'POST':
+        data = request.get_json()
+        if not data or 'metric_name' not in data:
+            return jsonify({'error': 'metric_name required'}), 400
+        thresh = _MetricThreshold(
+            metric_name=data['metric_name'],
+            min_val=data.get('min_val'),
+            max_val=data.get('max_val'),
+            z_score_threshold=data.get('z_score_threshold', 3.0),
+            flatline_tolerance=data.get('flatline_tolerance', 0.001),
+            flatline_min_points=data.get('flatline_min_points', 10),
+        )
+        agg.set_threshold(thresh)
+        return jsonify({'message': f'Threshold set for {data["metric_name"]}'})
+    return jsonify({'thresholds': {k: {
+        'min_val': v.min_val,
+        'max_val': v.max_val,
+        'z_score_threshold': v.z_score_threshold,
+    } for k, v in agg._thresholds.items()}})
+
+
+@app.route('/aggregator/clear/<metric_name>', methods=['POST'])
+@require_auth(scope='admin')
+def aggregator_clear(metric_name):
+    """Remove dados de uma métrica."""
+    agg = get_metrics_aggregator()
+    count = agg.clear_metric(metric_name)
+    return jsonify({'message': f'Cleared {count} points from {metric_name}'})

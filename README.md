@@ -1798,3 +1798,68 @@ manager.start_periodic_export(interval=60)
 ```
 
 **Testes:** 57 test cases cobrindo todos os exporters, manager, thread safety e singleton.
+
+---
+
+### v3.9 — Metrics Aggregator (Agregação Temporal + Detecção de Anomalias)
+
+**Novos módulos:**
+- `metrics_aggregator.py`: Agregador de métricas com detecção de anomalias
+
+**Funcionalidades:**
+- **Agregação temporal**: Janelas de 1min, 5min, 15min, 1h, 1d
+- **Estatísticas**: min, max, mean, median, stddev, p95, p99, sum
+- **Detecção de anomalias**: Z-Score, thresholds, flatline detection
+- **Trend analysis**: rising, falling, stable, volatile
+- **Correlação de Pearson**: entre quaisquer duas métricas
+- **Thresholds configuráveis**: min/max, z-score, flatline tolerance
+- **Worker thread**: detecção automática periódica
+- **Callbacks**: notificações em tempo real de anomalias
+- **Zero dependências**: apenas stdlib (threading, statistics, collections)
+
+**Endpoints:**
+```
+GET  /aggregator/stats              - Estatísticas do agregador
+GET  /aggregator/metrics            - Lista métricas rastreadas
+POST /aggregator/record             - Registra ponto de métrica
+GET  /aggregator/aggregate/<name>   - Agrega em janela temporal
+GET  /aggregator/aggregate-all/<name> - Agrega em todas janelas
+GET  /aggregator/anomalies          - Anomalias recentes (filtros: limit, metric, severity)
+POST /aggregator/anomalies/detect   - Força detecção de anomalias
+GET  /aggregator/trend/<name>       - Análise de tendência
+GET  /aggregator/correlate?a=X&b=Y  - Correlação entre métricas
+GET  /aggregator/thresholds         - Lista thresholds
+POST /aggregator/thresholds         - Configura threshold
+POST /aggregator/clear/<name>       - Remove dados de métrica
+```
+
+**Uso programático:**
+```python
+from metrics_aggregator import get_aggregator, AggregationWindow, MetricThreshold
+
+# Setup
+agg = get_aggregator()
+agg.start()
+
+# Registrar métricas
+agg.record("response_time", 150.5)
+agg.record("cpu_usage", 75.0)
+
+# Agregar
+result = agg.aggregate("response_time", AggregationWindow.MINUTE_1)
+print(f"Mean: {result.mean}, P95: {result.p95}")
+
+# Detectar anomalias
+agg.set_threshold(MetricThreshold("cpu_usage", max_val=90.0))
+anomalies = agg.detect_anomalies("cpu_usage")
+
+# Trend analysis
+trend = agg.get_trend("response_time")
+print(f"Direction: {trend['direction']}")
+
+# Correlação
+corr = agg.correlate("cpu_usage", "memory_usage")
+print(f"Correlation: {corr['correlation']}")
+```
+
+**Testes:** 53 test cases cobrindo agregação, anomalias, trend, correlação, thresholds, worker thread e singleton.
