@@ -41,6 +41,8 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Dependency Graph** - Mapeamento de dependências e análise de impacto de falhas (v3.6) 🆕
 - **Performance Profiler** - Profiling com decorator, context manager, regression detection (v3.7) 🆕
 - **Exporters** - Exportação para Prometheus, Datadog, InfluxDB, Grafana, JSON, CSV (v3.8) 🆕
+- **Metrics Aggregator** - Agregação temporal + detecção de anomalias (v3.9) 🆕
+- **Distributed Tracing** - Spans, correlation IDs, export Jaeger/Zipkin (v3.10) 🆕
 
 ## 🚀 Quick Start
 
@@ -700,6 +702,8 @@ mengao-monitor/
 - [x] **v3.6**: Dependency Graph (mapeamento de dependências e impacto) ✅ 🆕
 - [x] **v3.7**: Performance Profiler (decorator, context manager, regression detection) ✅ 🆕
 - [x] **v3.8**: Exporters (Prometheus, Datadog, InfluxDB, Grafana, JSON, CSV, Webhook) ✅ 🆕
+- [x] **v3.9**: Metrics Aggregator (agregação temporal + detecção de anomalias) ✅ 🆕
+- [x] **v3.10**: Distributed Tracing (spans, correlation IDs, Jaeger export) ✅ 🆕
 
 ### Data Layer (v3.5)
 
@@ -1863,3 +1867,110 @@ print(f"Correlation: {corr['correlation']}")
 ```
 
 **Testes:** 53 test cases cobrindo agregação, anomalias, trend, correlação, thresholds, worker thread e singleton.
+
+
+---
+
+### v3.10 — Distributed Tracing (Spans + Correlation IDs)
+
+**Novos módulos:**
+- `tracing.py`: Sistema de tracing distribuído
+- `test_tracing.py`: 35 test cases
+
+**Funcionalidades:**
+- **Spans aninhados**: Context manager automático para spans filhos
+- **Correlation IDs**: Conecta traces com logs e métricas
+- **Thread-safe**: ContextVars para async/concurrent safety
+- **Export Jaeger**: Formato compatível com Jaeger/Zipkin
+- **Decorator**: `@tracer.trace()` para instrumentação automática
+- **Eventos**: Logs dentro de spans
+- **Status tracking**: OK, ERROR, UNSET com error details
+- **Zero dependências**: Apenas stdlib (threading, contextvars, uuid)
+
+**Endpoints:**
+```
+GET  /tracing/stats                    - Estatísticas do tracer
+GET  /tracing/spans                    - Lista spans (filtros: trace_id, correlation_id, limit)
+GET  /tracing/trace/<trace_id>         - Todos spans de um trace
+GET  /tracing/trace/<trace_id>/jaeger  - Export formato Jaeger
+POST /tracing/clear                    - Limpa dados (admin)
+```
+
+**Uso programático:**
+```python
+from tracing import tracer, get_correlation_id
+
+# Context manager (recomendado)
+with tracer.span("api_call", {"endpoint": "/users"}) as span:
+    result = api_call()
+    span.set_attribute("status_code", 200)
+    span.add_event("cache_miss")
+
+# Correlation ID
+with tracer.correlation_id("req-123"):
+    # Todos spans criados aqui terão correlation_id
+    with tracer.span("db_query") as span:
+        db.query()
+
+# Decorator
+@tracer.trace("process_request")
+def handle_request(req):
+    ...
+
+# Nested spans
+with tracer.span("http_request") as root:
+    with tracer.span("auth_check"):
+        ...
+    with tracer.span("db_query"):
+        ...
+```
+
+**Exemplo de trace completo:**
+```json
+{
+  "trace_id": "abc123def456",
+  "spans": [
+    {
+      "span_id": "span001",
+      "name": "http_request",
+      "parent_span_id": null,
+      "duration_ms": 145.2,
+      "status": "OK",
+      "correlation_id": "req-123"
+    },
+    {
+      "span_id": "span002",
+      "name": "auth_check",
+      "parent_span_id": "span001",
+      "duration_ms": 12.5,
+      "status": "OK"
+    },
+    {
+      "span_id": "span003",
+      "name": "db_query",
+      "parent_span_id": "span001",
+      "duration_ms": 89.3,
+      "status": "OK"
+    }
+  ]
+}
+```
+
+**Integração com outros módulos:**
+```python
+# Com logging contextual
+from tracing import tracer, get_correlation_id
+import logging
+
+logger = logging.getLogger(__name__)
+
+with tracer.correlation_id("req-456"):
+    cid = get_correlation_id()
+    logger.info("Processing", extra={"correlation_id": cid})
+    
+    with tracer.span("operation") as span:
+        span.set_attribute("user_id", 42)
+        # ... work ...
+```
+
+**Testes:** 35 test cases cobrindo spans, tracer, correlation IDs, nested spans, decorator, error handling, export formats e thread safety.

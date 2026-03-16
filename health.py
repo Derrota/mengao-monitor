@@ -2307,3 +2307,79 @@ def aggregator_clear(metric_name):
     agg = get_metrics_aggregator()
     count = agg.clear_metric(metric_name)
     return jsonify({'message': f'Cleared {count} points from {metric_name}'})
+
+
+# ==========================================
+# Tracing Endpoints (v3.10)
+# ==========================================
+
+def get_tracer():
+    """Get the global tracer instance."""
+    from tracing import tracer
+    return tracer
+
+
+@app.route('/tracing/stats')
+@require_auth(scope='read')
+def tracing_stats():
+    """Estatísticas do tracer."""
+    t = get_tracer()
+    return jsonify(t.get_stats())
+
+
+@app.route('/tracing/spans')
+@require_auth(scope='read')
+def tracing_spans():
+    """Lista spans com filtros opcionais."""
+    t = get_tracer()
+    trace_id = request.args.get('trace_id')
+    correlation_id = request.args.get('correlation_id')
+    limit = request.args.get('limit', 100, type=int)
+    
+    spans = t.get_spans(
+        trace_id=trace_id,
+        correlation_id=correlation_id,
+        limit=limit
+    )
+    return jsonify({
+        'count': len(spans),
+        'spans': [s.to_dict() for s in spans]
+    })
+
+
+@app.route('/tracing/trace/<trace_id>')
+@require_auth(scope='read')
+def tracing_trace(trace_id):
+    """Obtém todos spans de um trace."""
+    t = get_tracer()
+    spans = t.get_trace(trace_id)
+    if not spans:
+        return jsonify({'error': 'Trace not found'}), 404
+    return jsonify({
+        'trace_id': trace_id,
+        'span_count': len(spans),
+        'spans': [s.to_dict() for s in spans]
+    })
+
+
+@app.route('/tracing/trace/<trace_id>/jaeger')
+@require_auth(scope='read')
+def tracing_trace_jaeger(trace_id):
+    """Exporta trace em formato Jaeger."""
+    t = get_tracer()
+    spans = t.get_trace(trace_id)
+    if not spans:
+        return jsonify({'error': 'Trace not found'}), 404
+    return jsonify({
+        'traceID': trace_id,
+        'spans': t.export_jaeger(trace_id)
+    })
+
+
+@app.route('/tracing/clear', methods=['POST'])
+@require_auth(scope='admin')
+def tracing_clear():
+    """Limpa todos os spans."""
+    t = get_tracer()
+    t.clear()
+    return jsonify({'message': 'Tracing data cleared'})
