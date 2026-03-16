@@ -39,6 +39,8 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Dashboard v3** - Interface em tempo real com WebSocket (v3.3) 🆕
 - **Health Check Templates** - Templates pré-definidos para REST, GraphQL, K8s, Elasticsearch (v3.4) 🆕
 - **Dependency Graph** - Mapeamento de dependências e análise de impacto de falhas (v3.6) 🆕
+- **Performance Profiler** - Profiling com decorator, context manager, regression detection (v3.7) 🆕
+- **Exporters** - Exportação para Prometheus, Datadog, InfluxDB, Grafana, JSON, CSV (v3.8) 🆕
 
 ## 🚀 Quick Start
 
@@ -696,6 +698,8 @@ mengao-monitor/
 - [x] **v3.4**: Health Check Templates (REST, GraphQL, presets) ✅ 🆕
 - [x] **v3.5**: Data Layer (persistência unificada SQLite) ✅ 🆕
 - [x] **v3.6**: Dependency Graph (mapeamento de dependências e impacto) ✅ 🆕
+- [x] **v3.7**: Performance Profiler (decorator, context manager, regression detection) ✅ 🆕
+- [x] **v3.8**: Exporters (Prometheus, Datadog, InfluxDB, Grafana, JSON, CSV, Webhook) ✅ 🆕
 
 ### Data Layer (v3.5)
 
@@ -1691,3 +1695,106 @@ for r in regressions:
 
 **Testes:** 37 test cases cobrindo profiling, regressão, thread safety, decorator e context manager.
 
+
+## 📤 Exporters (v3.8) 🆕
+
+Sistema de exportação de métricas para sistemas externos. Suporta múltiplos destinos simultâneos com buffer, retry e estatísticas.
+
+**Exporters disponíveis:**
+- **Prometheus** - Pushgateway (métricas no formato Prometheus)
+- **Datadog** - API v1/series (métricas com tags)
+- **InfluxDB** - Line Protocol (séries temporais)
+- **Grafana** - Annotations (eventos visuais no dashboard)
+- **JSON File** - Arquivo JSON (append ou overwrite)
+- **CSV File** - Arquivo CSV com header automático
+- **Webhook** - POST genérico para qualquer endpoint
+
+**Features:**
+- **Buffer de métricas** - acumula e exporta em batch
+- **Filtro por prefixo** - exporta apenas métricas selecionadas
+- **Labels padrão** - adiciona labels globais (env, region, etc.)
+- **Thread-safe** - operações concorrentes seguras
+- **Histórico** - tracking de todas as exportações
+- **Estatísticas** - success rate, avg duration, total metrics
+
+**Endpoints:**
+- `GET /exporters` - Lista exporters + stats globais
+- `GET /exporters/history` - Histórico de exportações (filtros: limit, exporter, status)
+- `GET /exporters/stats` - Stats globais
+- `GET /exporters/<name>/stats` - Stats de um exporter
+- `POST /exporters/<name>/enable` - Habilita exporter (admin)
+- `POST /exporters/<name>/disable` - Desabilita exporter (admin)
+- `POST /exporters/<name>/export` - Exporta métricas para um específico
+- `POST /exporters/export-all` - Exporta para todos habilitados
+- `POST /exporters/register` - Registra novo exporter (admin)
+- `DELETE /exporters/<name>` - Remove exporter (admin)
+- `POST /exporters/flush` - Força flush do buffer (admin)
+- `POST /exporters/clear-history` - Limpa histórico (admin)
+
+**Exemplo de registro via API:**
+```bash
+# Registrar JSON file exporter
+curl -X POST http://localhost:8080/exporters/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "json_backup",
+    "type": "json_file",
+    "config": {
+      "filepath": "/var/metrics/backup.json",
+      "append": true,
+      "labels": {"env": "prod"},
+      "metric_filter": ["cpu_", "memory_"]
+    }
+  }'
+
+# Registrar InfluxDB exporter
+curl -X POST http://localhost:8080/exporters/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "influx_main",
+    "type": "influxdb",
+    "config": {
+      "url": "http://localhost:8086",
+      "database": "mengao_monitor"
+    }
+  }'
+
+# Exportar métricas manualmente
+curl -X POST http://localhost:8080/exporters/export-all \
+  -H "Content-Type: application/json" \
+  -d '{
+    "metrics": [
+      {"name": "cpu_usage", "value": 75.5, "labels": {"host": "web1"}},
+      {"name": "memory_mb", "value": 1024, "labels": {"host": "web1"}}
+    ]
+  }'
+```
+
+**Uso programático:**
+```python
+from exporters import (
+    get_exporter_manager, MetricPoint, ExporterConfig,
+    JSONFileExporter, InfluxDBExporter
+)
+
+# Setup
+manager = get_exporter_manager()
+
+# Registrar exporters
+config = ExporterConfig(name="json", labels={"env": "prod"})
+json_exp = JSONFileExporter(config, "/tmp/metrics.json")
+manager.register_exporter(json_exp)
+
+# Exportar
+metrics = [
+    MetricPoint("cpu", 75.5, {"host": "web1"}),
+    MetricPoint("memory", 1024, {"host": "web1"})
+]
+results = manager.export_all(metrics)
+
+# Buffer + flush periódico
+manager.buffer_metrics(metrics)
+manager.start_periodic_export(interval=60)
+```
+
+**Testes:** 57 test cases cobrindo todos os exporters, manager, thread safety e singleton.

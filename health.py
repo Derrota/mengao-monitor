@@ -1900,3 +1900,248 @@ def profiler_export():
         'message': f'Report exported to {filepath}',
         'path': filepath
     })
+
+# ============================================================
+# Exporters v3.8
+# ============================================================
+
+from exporters import (
+    ExporterManager, MetricPoint, ExporterConfig, ExportStatus,
+    PrometheusExporter, DatadogExporter, InfluxDBExporter,
+    JSONFileExporter, CSVFileExporter, WebhookExporter, GrafanaExporter,
+    get_exporter_manager
+)
+
+exporter_manager = get_exporter_manager()
+
+
+@app.route('/exporters')
+@optional_auth
+def exporters_list():
+    """Lista todos os exporters registrados."""
+    return jsonify({
+        'exporters': exporter_manager.list_exporters(),
+        'stats': exporter_manager.get_global_stats()
+    })
+
+
+@app.route('/exporters/history')
+@optional_auth
+def exporters_history():
+    """Histórico de exportações."""
+    limit = request.args.get('limit', 100, type=int)
+    exporter_name = request.args.get('exporter')
+    status_str = request.args.get('status')
+    
+    status = None
+    if status_str:
+        try:
+            status = ExportStatus(status_str)
+        except ValueError:
+            pass
+    
+    return jsonify({
+        'history': exporter_manager.get_history(
+            limit=limit,
+            exporter_name=exporter_name,
+            status=status
+        )
+    })
+
+
+@app.route('/exporters/stats')
+@optional_auth
+def exporters_stats():
+    """Estatísticas globais dos exporters."""
+    return jsonify(exporter_manager.get_global_stats())
+
+
+@app.route('/exporters/<name>/stats')
+@optional_auth
+def exporter_stats(name):
+    """Estatísticas de um exporter específico."""
+    exporter = exporter_manager.get_exporter(name)
+    if not exporter:
+        return jsonify({'error': 'Exporter not found'}), 404
+    return jsonify({
+        'name': name,
+        'type': exporter.__class__.__name__,
+        'enabled': exporter.enabled,
+        'stats': exporter.get_stats()
+    })
+
+
+@app.route('/exporters/<name>/enable', methods=['POST'])
+@require_auth(scope='admin')
+def exporter_enable(name):
+    """Habilita um exporter."""
+    if exporter_manager.enable_exporter(name):
+        return jsonify({'message': f'Exporter {name} enabled'})
+    return jsonify({'error': 'Exporter not found'}), 404
+
+
+@app.route('/exporters/<name>/disable', methods=['POST'])
+@require_auth(scope='admin')
+def exporter_disable(name):
+    """Desabilita um exporter."""
+    if exporter_manager.disable_exporter(name):
+        return jsonify({'message': f'Exporter {name} disabled'})
+    return jsonify({'error': 'Exporter not found'}), 404
+
+
+@app.route('/exporters/<name>/export', methods=['POST'])
+@require_auth(scope='write')
+def exporter_export(name):
+    """Exporta métricas para um exporter específico."""
+    data = request.get_json() or {}
+    metrics_data = data.get('metrics', [])
+    
+    metrics = [
+        MetricPoint(
+            name=m.get('name', 'unknown'),
+            value=m.get('value', 0),
+            labels=m.get('labels', {}),
+            timestamp=m.get('timestamp'),
+            metric_type=m.get('type', 'gauge')
+        )
+        for m in metrics_data
+    ]
+    
+    result = exporter_manager.export_to(name, metrics)
+    if not result:
+        return jsonify({'error': 'Exporter not found or disabled'}), 404
+    
+    return jsonify(result.to_dict())
+
+
+@app.route('/exporters/export-all', methods=['POST'])
+@require_auth(scope='write')
+def exporters_export_all():
+    """Exporta métricas para todos os exporters habilitados."""
+    data = request.get_json() or {}
+    metrics_data = data.get('metrics', [])
+    
+    metrics = [
+        MetricPoint(
+            name=m.get('name', 'unknown'),
+            value=m.get('value', 0),
+            labels=m.get('labels', {}),
+            timestamp=m.get('timestamp'),
+            metric_type=m.get('type', 'gauge')
+        )
+        for m in metrics_data
+    ]
+    
+    results = exporter_manager.export_all(metrics)
+    return jsonify({
+        'results': [r.to_dict() for r in results],
+        'total': len(results)
+    })
+
+
+@app.route('/exporters/register', methods=['POST'])
+@require_auth(scope='admin')
+def exporter_register():
+    """Registra um novo exporter."""
+    data = request.get_json() or {}
+    
+    exporter_type = data.get('type')
+    name = data.get('name')
+    config_data = data.get('config', {})
+    
+    if not exporter_type or not name:
+        return jsonify({'error': 'type and name required'}), 400
+    
+    config = ExporterConfig(
+        name=name,
+        enabled=config_data.get('enabled', True),
+        interval_seconds=config_data.get('interval_seconds', 60),
+        labels=config_data.get('labels'),
+        metric_filter=config_data.get('metric_filter')
+    )
+    
+    exporter = None
+    
+    if exporter_type == 'json_file':
+        filepath = config_data.get('filepath')
+        if not filepath:
+            return jsonify({'error': 'filepath required for json_file'}), 400
+        exporter = JSONFileExporter(config, filepath, config_data.get('append', True))
+    
+    elif exporter_type == 'csv_file':
+        filepath = config_data.get('filepath')
+        if not filepath:
+            return jsonify({'error': 'filepath required for csv_file'}), 400
+        exporter = CSVFileExporter(config, filepath)
+    
+    elif exporter_type == 'prometheus':
+        url = config_data.get('pushgateway_url')
+        job = config_data.get('job_name', 'mengao_monitor')
+        if not url:
+            return jsonify({'error': 'pushgateway_url required'}), 400
+        exporter = PrometheusExporter(config, url, job)
+    
+    elif exporter_type == 'datadog':
+        api_key = config_data.get('api_key')
+        if not api_key:
+            return jsonify({'error': 'api_key required'}), 400
+        exporter = DatadogExporter(config, api_key, config_data.get('site', 'datadoghq.com'))
+    
+    elif exporter_type == 'influxdb':
+        url = config_data.get('url')
+        db = config_data.get('database')
+        if not url or not db:
+            return jsonify({'error': 'url and database required'}), 400
+        exporter = InfluxDBExporter(config, url, db, config_data.get('username'), config_data.get('password'))
+    
+    elif exporter_type == 'webhook':
+        url = config_data.get('url')
+        if not url:
+            return jsonify({'error': 'url required'}), 400
+        exporter = WebhookExporter(config, url, config_data.get('headers'), config_data.get('method', 'POST'))
+    
+    elif exporter_type == 'grafana':
+        url = config_data.get('url')
+        api_key = config_data.get('api_key')
+        if not url or not api_key:
+            return jsonify({'error': 'url and api_key required'}), 400
+        exporter = GrafanaExporter(config, url, api_key)
+    
+    else:
+        return jsonify({'error': f'Unknown exporter type: {exporter_type}'}), 400
+    
+    if exporter_manager.register_exporter(exporter):
+        return jsonify({
+            'message': f'Exporter {name} registered',
+            'type': exporter_type
+        }), 201
+    
+    return jsonify({'error': 'Failed to register exporter'}), 400
+
+
+@app.route('/exporters/<name>', methods=['DELETE'])
+@require_auth(scope='admin')
+def exporter_delete(name):
+    """Remove um exporter."""
+    if exporter_manager.unregister_exporter(name):
+        return jsonify({'message': f'Exporter {name} removed'})
+    return jsonify({'error': 'Exporter not found'}), 404
+
+
+@app.route('/exporters/flush', methods=['POST'])
+@require_auth(scope='admin')
+def exporters_flush():
+    """Força flush do buffer de métricas."""
+    results = exporter_manager.flush_buffer()
+    return jsonify({
+        'message': f'Flushed {len(results)} exporters',
+        'results': [r.to_dict() for r in results]
+    })
+
+
+@app.route('/exporters/clear-history', methods=['POST'])
+@require_auth(scope='admin')
+def exporters_clear_history():
+    """Limpa histórico de exportações."""
+    exporter_manager.clear_history()
+    return jsonify({'message': 'History cleared'})
