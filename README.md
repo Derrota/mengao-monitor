@@ -1623,3 +1623,71 @@ checker.register("api", create_rest_template(
 - `get_stats()` - Estatísticas globais
 
 **Testes:** 52 test cases cobrindo assertions, templates, checker, factory functions e edge cases.
+
+## 📊 Performance Profiler (v3.7) 🆕
+
+Profiler de performance integrado para identificar gargalos e detectar regressões:
+
+**Features:**
+- **Medição automática** - Decorator `@profile()` ou context manager `ProfileContext`
+- **Estatísticas avançadas** - avg, p50, p95, p99, min, max, std_dev
+- **Detecção de regressão** - Alertas automáticos quando performance piora
+- **Identificação de gargalos** - Ranking por tempo total e p95
+- **Thread-safe** - Funciona em ambiente multi-thread
+- **Overhead zero** - Pode ser desabilitado em produção
+
+**Endpoints:**
+
+| Endpoint | Método | Descrição |
+|----------|--------|-----------|
+| `/profiler/stats` | GET | Estatísticas globais |
+| `/profiler/functions` | GET | Lista funções perfiladas |
+| `/profiler/function/<name>` | GET | Detalhe de função |
+| `/profiler/bottlenecks` | GET | Maiores gargalos |
+| `/profiler/slowest` | GET | Funções mais lentas |
+| `/profiler/regressions` | GET | Regressões detectadas |
+| `/profiler/report` | GET | Relatório completo |
+| `/profiler/enable` | POST | Habilita profiler |
+| `/profiler/disable` | POST | Desabilita profiler |
+| `/profiler/reset` | POST | Reseta dados (admin) |
+| `/profiler/export` | POST | Exporta JSON (admin) |
+
+**Uso com decorator:**
+```python
+from performance_profiler import profile
+
+@profile()
+def minha_funcao():
+    # código a ser medido
+    pass
+
+@profile("custom_name", metadata={"version": "3.7"})
+def outra_funcao():
+    pass
+```
+
+**Uso com context manager:**
+```python
+from performance_profiler import ProfileContext
+
+with ProfileContext("meu_bloco"):
+    # código a ser medido
+    pass
+```
+
+**Detecção de regressão:**
+```python
+from performance_profiler import get_profiler
+
+profiler = get_profiler()
+# Threshold padrão: 20% de aumento
+# Window padrão: 100 amostras para baseline
+
+# Verificar regressões
+regressions = profiler.get_regressions()
+for r in regressions:
+    print(f"{r.name}: +{r.regression_pct:.1f}% vs baseline")
+```
+
+**Testes:** 37 test cases cobrindo profiling, regressão, thread safety, decorator e context manager.
+

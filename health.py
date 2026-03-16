@@ -1588,6 +1588,7 @@ def data_vacuum():
 
 
 from dependency_graph import DependencyGraph
+from performance_profiler import get_profiler, ProfileContext
 
 dependency_graph = DependencyGraph()
 
@@ -1751,3 +1752,151 @@ def get_dependency_graph():
 def get_data_layer():
     """Retorna instância do data layer para uso externo."""
     return data_layer
+
+
+# ============================================================
+# Performance Profiler Endpoints (v3.7) 🆕
+# ============================================================
+
+performance_profiler = get_profiler()
+
+
+@app.route('/profiler/stats')
+@optional_auth
+def profiler_stats():
+    """Estatísticas globais do profiler."""
+    return jsonify(performance_profiler.get_global_stats())
+
+
+@app.route('/profiler/functions')
+@optional_auth
+def profiler_functions():
+    """Lista todas as funções perfiladas com estatísticas."""
+    sort_by = request.args.get('sort', 'total_ms')
+    limit = request.args.get('limit', 20, type=int)
+    
+    all_stats = performance_profiler.get_all_stats()
+    
+    # Ordenação
+    if sort_by == 'avg_ms':
+        all_stats.sort(key=lambda x: x.avg_ms, reverse=True)
+    elif sort_by == 'p95_ms':
+        all_stats.sort(key=lambda x: x.p95_ms, reverse=True)
+    elif sort_by == 'count':
+        all_stats.sort(key=lambda x: x.count, reverse=True)
+    else:  # total_ms (default)
+        all_stats.sort(key=lambda x: x.total_ms, reverse=True)
+    
+    return jsonify({
+        'functions': [s.to_dict() for s in all_stats[:limit]],
+        'total_tracked': len(all_stats),
+        'sort_by': sort_by
+    })
+
+
+@app.route('/profiler/function/<name>')
+@optional_auth
+def profiler_function_detail(name):
+    """Detalhes de uma função específica."""
+    stats = performance_profiler.get_stats(name)
+    
+    if not stats:
+        return jsonify({'error': f'Function not found: {name}'}), 404
+    
+    # Histórico recente
+    limit = request.args.get('limit', 50, type=int)
+    history = performance_profiler.get_history(name, limit=limit)
+    
+    return jsonify({
+        'stats': stats.to_dict(),
+        'history': [e.to_dict() for e in history]
+    })
+
+
+@app.route('/profiler/bottlenecks')
+@optional_auth
+def profiler_bottlenecks():
+    """Identifica os maiores gargalos."""
+    top_n = request.args.get('top', 10, type=int)
+    bottlenecks = performance_profiler.get_bottlenecks(top_n)
+    
+    return jsonify({
+        'bottlenecks': [b.to_dict() for b in bottlenecks],
+        'recommendation': f"Top gargalo: {bottlenecks[0].name} ({bottlenecks[0].total_ms:.1f}ms total)" if bottlenecks else "Nenhum gargalo identificado"
+    })
+
+
+@app.route('/profiler/slowest')
+@optional_auth
+def profiler_slowest():
+    """Identifica as funções mais lentas (por p95)."""
+    top_n = request.args.get('top', 10, type=int)
+    slowest = performance_profiler.get_slowest(top_n)
+    
+    return jsonify({
+        'slowest': [s.to_dict() for s in slowest],
+        'recommendation': f"Função mais lenta: {slowest[0].name} (p95: {slowest[0].p95_ms:.1f}ms)" if slowest else "Nenhuma função lenta identificada"
+    })
+
+
+@app.route('/profiler/regressions')
+@optional_auth
+def profiler_regressions():
+    """Lista regressões de performance detectadas."""
+    limit = request.args.get('limit', 20, type=int)
+    regressions = performance_profiler.get_regressions(limit)
+    
+    return jsonify({
+        'regressions': [r.to_dict() for r in regressions],
+        'count': len(regressions),
+        'threshold_pct': performance_profiler.regression_threshold_pct
+    })
+
+
+@app.route('/profiler/report')
+@optional_auth
+def profiler_report():
+    """Gera relatório completo de performance."""
+    return jsonify(performance_profiler.generate_report())
+
+
+@app.route('/profiler/enable', methods=['POST'])
+@require_auth(scope='admin')
+def profiler_enable():
+    """Habilita o profiler."""
+    performance_profiler.enable()
+    return jsonify({'message': 'Profiler enabled'})
+
+
+@app.route('/profiler/disable', methods=['POST'])
+@require_auth(scope='admin')
+def profiler_disable():
+    """Desabilita o profiler (overhead zero)."""
+    performance_profiler.disable()
+    return jsonify({'message': 'Profiler disabled'})
+
+
+@app.route('/profiler/reset', methods=['POST'])
+@require_auth(scope='admin')
+def profiler_reset():
+    """Reseta todos os dados do profiler (requer admin)."""
+    performance_profiler.reset()
+    return jsonify({'message': 'Profiler data reset'})
+
+
+@app.route('/profiler/export')
+@require_auth(scope='admin')
+def profiler_export():
+    """Exporta relatório para arquivo JSON."""
+    import tempfile
+    import os
+    
+    data = request.get_json() or {}
+    filepath = data.get('path', '/tmp/mengao_monitor_profiler_report.json')
+    
+    performance_profiler.export_json(filepath)
+    
+    return jsonify({
+        'message': f'Report exported to {filepath}',
+        'path': filepath
+    })
