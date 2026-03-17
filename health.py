@@ -2598,3 +2598,193 @@ def playbooks_template_high_latency():
         'message': 'Playbook created from template',
         'playbook': playbook.to_dict()
     }), 201
+
+
+# ============================================================
+# Health Check Scheduler Endpoints (v3.12) 🆕
+# ============================================================
+
+from health_check_scheduler import get_scheduler, ScheduleStatus, reset_scheduler
+
+# Inicializa scheduler com callback para health check manager
+def _scheduler_check_callback(check_name: str) -> dict:
+    """Callback para executar health checks via scheduler."""
+    result = health_check_manager.run_check(check_name)
+    if result:
+        return {
+            "success": result.passed,
+            "status": "passed" if result.passed else "failed",
+            "response_time_ms": result.response_time_ms,
+            "error": None if result.passed else result.message
+        }
+    return {"success": False, "error": f"Check not found: {check_name}"}
+
+scheduler = get_scheduler(check_callback=_scheduler_check_callback)
+
+
+@app.route('/scheduler/stats')
+@optional_auth
+def scheduler_stats():
+    """Estatísticas do scheduler de health checks."""
+    return jsonify(scheduler.get_stats())
+
+
+@app.route('/scheduler/schedules')
+@optional_auth
+def scheduler_list():
+    """Lista agendamentos com filtros opcionais."""
+    status_filter = request.args.get('status')
+    check_name_filter = request.args.get('check_name')
+    
+    status_enum = None
+    if status_filter:
+        try:
+            status_enum = ScheduleStatus(status_filter)
+        except ValueError:
+            return jsonify({'error': f'Invalid status: {status_filter}'}), 400
+    
+    schedules = scheduler.list_schedules(
+        status_filter=status_enum,
+        check_name_filter=check_name_filter
+    )
+    
+    return jsonify({
+        'schedules': [s.to_dict() for s in schedules],
+        'count': len(schedules)
+    })
+
+
+@app.route('/scheduler/schedules/<name>')
+@optional_auth
+def scheduler_get(name):
+    """Obtém detalhes de um agendamento específico."""
+    schedule = scheduler.get_schedule(name)
+    if not schedule:
+        return jsonify({'error': f'Schedule not found: {name}'}), 404
+    
+    return jsonify(schedule.to_dict())
+
+
+@app.route('/scheduler/schedules/recurring', methods=['POST'])
+@require_auth(scope='write')
+def scheduler_add_recurring():
+    """Adiciona agendamento recorrente."""
+    data = request.get_json()
+    if not data or 'name' not in data or 'check_name' not in data or 'cron_expression' not in data:
+        return jsonify({'error': 'Missing name, check_name, or cron_expression'}), 400
+    
+    try:
+        schedule = scheduler.add_recurring_schedule(
+            name=data['name'],
+            check_name=data['check_name'],
+            cron_expression=data['cron_expression'],
+            enabled=data.get('enabled', True),
+            metadata=data.get('metadata')
+        )
+        return jsonify({
+            'message': f'Recurring schedule created: {data["name"]}',
+            'schedule': schedule.to_dict()
+        }), 201
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/scheduler/schedules/one-shot', methods=['POST'])
+@require_auth(scope='write')
+def scheduler_add_one_shot():
+    """Adiciona agendamento one-shot (executa uma vez)."""
+    data = request.get_json()
+    if not data or 'name' not in data or 'check_name' not in data or 'run_at' not in data:
+        return jsonify({'error': 'Missing name, check_name, or run_at'}), 400
+    
+    try:
+        run_at = datetime.fromisoformat(data['run_at'])
+        schedule = scheduler.add_one_shot_schedule(
+            name=data['name'],
+            check_name=data['check_name'],
+            run_at=run_at,
+            metadata=data.get('metadata')
+        )
+        return jsonify({
+            'message': f'One-shot schedule created: {data["name"]}',
+            'schedule': schedule.to_dict()
+        }), 201
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/scheduler/schedules/<name>', methods=['DELETE'])
+@require_auth(scope='write')
+def scheduler_remove(name):
+    """Remove um agendamento."""
+    if scheduler.remove_schedule(name):
+        return jsonify({'message': f'Schedule removed: {name}'})
+    return jsonify({'error': f'Schedule not found: {name}'}), 404
+
+
+@app.route('/scheduler/schedules/<name>/enable', methods=['POST'])
+@require_auth(scope='write')
+def scheduler_enable(name):
+    """Habilita um agendamento."""
+    if scheduler.enable_schedule(name):
+        return jsonify({'message': f'Schedule enabled: {name}'})
+    return jsonify({'error': f'Schedule not found: {name}'}), 404
+
+
+@app.route('/scheduler/schedules/<name>/disable', methods=['POST'])
+@require_auth(scope='write')
+def scheduler_disable(name):
+    """Desabilita um agendamento."""
+    if scheduler.disable_schedule(name):
+        return jsonify({'message': f'Schedule disabled: {name}'})
+    return jsonify({'error': f'Schedule not found: {name}'}), 404
+
+
+@app.route('/scheduler/schedules/<name>/run', methods=['POST'])
+@require_auth(scope='write')
+def scheduler_run_now(name):
+    """Executa um agendamento imediatamente."""
+    result = scheduler.run_now(name)
+    if result:
+        return jsonify({
+            'message': f'Schedule executed: {name}',
+            'result': {
+                'schedule_name': result.schedule_name,
+                'executed_at': result.executed_at.isoformat(),
+                'success': result.success,
+                'duration_ms': result.duration_ms,
+                'error': result.error
+            }
+        })
+    return jsonify({'error': f'Schedule not found: {name}'}), 404
+
+
+@app.route('/scheduler/history')
+@optional_auth
+def scheduler_history():
+    """Histórico de execuções do scheduler."""
+    limit = request.args.get('limit', 50, type=int)
+    schedule_name = request.args.get('schedule_name')
+    success_only = request.args.get('success_only', 'false').lower() == 'true'
+    
+    history = scheduler.get_history(
+        limit=limit,
+        schedule_name=schedule_name,
+        success_only=success_only
+    )
+    
+    return jsonify({
+        'history': [{
+            'schedule_name': r.schedule_name,
+            'executed_at': r.executed_at.isoformat(),
+            'success': r.success,
+            'duration_ms': r.duration_ms,
+            'error': r.error
+        } for r in history],
+        'count': len(history)
+    })
+
+
+def get_scheduler_instance():
+    """Retorna instância do scheduler para uso externo."""
+    return scheduler

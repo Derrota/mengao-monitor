@@ -44,6 +44,7 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Metrics Aggregator** - Agregação temporal + detecção de anomalias (v3.9) 🆕
 - **Incident Response Playbooks** - Playbooks automatizados com ações, condições, rate limiting (v3.11) 🆕
 - **Distributed Tracing** - Spans, correlation IDs, export Jaeger/Zipkin (v3.10) 🆕
+- **Health Check Scheduler** - Agendamento cron-like para health checks (v3.12) 🆕
 
 ## 🚀 Quick Start
 
@@ -1975,3 +1976,67 @@ with tracer.correlation_id("req-456"):
 ```
 
 **Testes:** 35 test cases cobrindo spans, tracer, correlation IDs, nested spans, decorator, error handling, export formats e thread safety.
+
+## 📅 Health Check Scheduler (v3.12) 🆕
+
+Sistema de agendamento de health checks com suporte a expressões cron-like:
+
+**Features:**
+- **Cron-like expressions**: Agende checks com sintaxe familiar (min hour day month weekday)
+- **One-shot schedules**: Execute checks uma vez em horário específico
+- **Recurring schedules**: Execute checks repetidamente (ex: todo dia às 9h)
+- **Histórico completo**: Tracking de execuções com sucesso/falha
+- **Thread-safe**: Worker thread daemon para execução automática
+- **Zero dependências**: Apenas stdlib
+
+**Expressões Cron:**
+```
+*/5 * * * *     → A cada 5 minutos
+0 */2 * * *     → A cada 2 horas
+0 9 * * 1-5     → 9h da manhã, seg-sex
+30 14 * * *     → 14:30 todo dia
+0 0 1 * *       → Meia-noite no dia 1 de cada mês
+0 9,12,18 * * * → 9h, 12h e 18h todo dia
+```
+
+**Endpoints:**
+```bash
+# Estatísticas do scheduler
+curl http://localhost:8080/scheduler/stats
+
+# Listar agendamentos
+curl http://localhost:8080/scheduler/schedules
+
+# Criar agendamento recorrente
+curl -X POST http://localhost:8080/scheduler/schedules/recurring \
+  -H "Authorization: Bearer mm_token" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "daily_ssl", "check_name": "ssl_check", "cron_expression": "0 9 * * *"}'
+
+# Executar imediatamente
+curl -X POST http://localhost:8080/scheduler/schedules/daily_ssl/run \
+  -H "Authorization: Bearer mm_token"
+
+# Histórico
+curl http://localhost:8080/scheduler/history?limit=50
+```
+
+**Testes:** 30 test cases cobrindo cron expressions, scheduler, callbacks, histórico e edge cases.
+
+## 🤝 Contribuindo
+
+1. Fork o projeto
+2. Crie sua feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit suas mudanças (`git commit -m 'Add AmazingFeature'`)
+4. Push para a branch (`git push origin feature/AmazingFeature`)
+5. Abra um Pull Request
+
+## 📜 Licença
+
+MIT License - veja [LICENSE](LICENSE) para detalhes.
+
+## 🦞 Sobre
+
+Criado com ❤️ e paixão rubro-negra por [Lek](https://github.com/Derrota).
+
+**Uma vez Flamengo, sempre Flamengo!** 🔴⚫
