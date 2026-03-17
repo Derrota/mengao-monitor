@@ -2383,3 +2383,218 @@ def tracing_clear():
     t = get_tracer()
     t.clear()
     return jsonify({'message': 'Tracing data cleared'})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🦞 v3.11 - Incident Response Playbooks
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_playbook_manager = None
+
+def get_playbook_manager():
+    """Obtém ou cria o gerenciador de playbooks."""
+    global _playbook_manager
+    if _playbook_manager is None:
+        from incident_playbooks import IncidentPlaybookManager
+        _playbook_manager = IncidentPlaybookManager()
+    return _playbook_manager
+
+
+@app.route('/playbooks/stats')
+@require_auth(scope='read')
+def playbooks_stats():
+    """Estatísticas do gerenciador de playbooks."""
+    pm = get_playbook_manager()
+    return jsonify(pm.get_stats())
+
+
+@app.route('/playbooks', methods=['GET'])
+@require_auth(scope='read')
+def playbooks_list():
+    """Lista todos os playbooks."""
+    pm = get_playbook_manager()
+    enabled_only = request.args.get('enabled', 'false').lower() == 'true'
+    playbooks = pm.list_playbooks(enabled_only=enabled_only)
+    return jsonify({
+        'count': len(playbooks),
+        'playbooks': [p.to_dict() for p in playbooks]
+    })
+
+
+@app.route('/playbooks/<playbook_id>', methods=['GET'])
+@require_auth(scope='read')
+def playbooks_get(playbook_id):
+    """Obtém um playbook específico."""
+    pm = get_playbook_manager()
+    playbook = pm.get_playbook(playbook_id)
+    if not playbook:
+        return jsonify({'error': 'Playbook not found'}), 404
+    return jsonify(playbook.to_dict())
+
+
+@app.route('/playbooks', methods=['POST'])
+@require_auth(scope='write')
+def playbooks_create():
+    """Cria um novo playbook."""
+    pm = get_playbook_manager()
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'JSON body required'}), 400
+    
+    try:
+        from incident_playbooks import Playbook
+        playbook = Playbook.from_dict(data)
+        pm.register_playbook(playbook)
+        return jsonify({'message': 'Playbook created', 'playbook': playbook.to_dict()}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/playbooks/<playbook_id>', methods=['DELETE'])
+@require_auth(scope='admin')
+def playbooks_delete(playbook_id):
+    """Remove um playbook."""
+    pm = get_playbook_manager()
+    if pm.unregister_playbook(playbook_id):
+        return jsonify({'message': 'Playbook deleted'})
+    return jsonify({'error': 'Playbook not found'}), 404
+
+
+@app.route('/playbooks/<playbook_id>/enable', methods=['POST'])
+@require_auth(scope='write')
+def playbooks_enable(playbook_id):
+    """Habilita um playbook."""
+    pm = get_playbook_manager()
+    if pm.enable_playbook(playbook_id):
+        return jsonify({'message': 'Playbook enabled'})
+    return jsonify({'error': 'Playbook not found'}), 404
+
+
+@app.route('/playbooks/<playbook_id>/disable', methods=['POST'])
+@require_auth(scope='write')
+def playbooks_disable(playbook_id):
+    """Desabilita um playbook."""
+    pm = get_playbook_manager()
+    if pm.disable_playbook(playbook_id):
+        return jsonify({'message': 'Playbook disabled'})
+    return jsonify({'error': 'Playbook not found'}), 404
+
+
+@app.route('/playbooks/trigger', methods=['POST'])
+@require_auth(scope='write')
+def playbooks_trigger():
+    """Dispara playbooks manualmente."""
+    pm = get_playbook_manager()
+    data = request.get_json() or {}
+    
+    trigger_type = data.get('trigger', 'manual')
+    context = data.get('context', {})
+    
+    executions = pm.trigger(trigger_type, context)
+    return jsonify({
+        'triggered': len(executions),
+        'executions': [e.to_dict() for e in executions]
+    })
+
+
+@app.route('/playbooks/executions', methods=['GET'])
+@require_auth(scope='read')
+def playbooks_executions():
+    """Lista execuções de playbooks."""
+    pm = get_playbook_manager()
+    
+    playbook_id = request.args.get('playbook_id')
+    status = request.args.get('status')
+    limit = int(request.args.get('limit', 50))
+    
+    executions = pm.get_executions(
+        playbook_id=playbook_id,
+        status=status,
+        limit=limit
+    )
+    
+    return jsonify({
+        'count': len(executions),
+        'executions': [e.to_dict() for e in executions]
+    })
+
+
+@app.route('/playbooks/executions/<execution_id>', methods=['GET'])
+@require_auth(scope='read')
+def playbooks_execution_detail(execution_id):
+    """Obtém detalhes de uma execução específica."""
+    pm = get_playbook_manager()
+    execution = pm.get_execution(execution_id)
+    if not execution:
+        return jsonify({'error': 'Execution not found'}), 404
+    return jsonify(execution.to_dict())
+
+
+@app.route('/playbooks/export', methods=['GET'])
+@require_auth(scope='read')
+def playbooks_export():
+    """Exporta todos os playbooks."""
+    pm = get_playbook_manager()
+    return jsonify({
+        'version': '3.11',
+        'playbooks': pm.export_playbooks()
+    })
+
+
+@app.route('/playbooks/import', methods=['POST'])
+@require_auth(scope='admin')
+def playbooks_import():
+    """Importa playbooks."""
+    pm = get_playbook_manager()
+    data = request.get_json()
+    
+    if not data or 'playbooks' not in data:
+        return jsonify({'error': 'JSON body with playbooks array required'}), 400
+    
+    count = pm.import_playbooks(data['playbooks'])
+    return jsonify({
+        'message': f'{count} playbooks imported',
+        'imported': count
+    })
+
+
+@app.route('/playbooks/templates/endpoint-down', methods=['POST'])
+@require_auth(scope='write')
+def playbooks_template_endpoint_down():
+    """Cria playbook a partir do template endpoint-down."""
+    pm = get_playbook_manager()
+    data = request.get_json() or {}
+    
+    endpoint_name = data.get('endpoint_name')
+    webhook_url = data.get('webhook_url', '')
+    
+    if not endpoint_name:
+        return jsonify({'error': 'endpoint_name required'}), 400
+    
+    from incident_playbooks import create_endpoint_down_playbook
+    playbook = create_endpoint_down_playbook(endpoint_name, webhook_url)
+    pm.register_playbook(playbook)
+    
+    return jsonify({
+        'message': 'Playbook created from template',
+        'playbook': playbook.to_dict()
+    }), 201
+
+
+@app.route('/playbooks/templates/high-latency', methods=['POST'])
+@require_auth(scope='write')
+def playbooks_template_high_latency():
+    """Cria playbook a partir do template high-latency."""
+    pm = get_playbook_manager()
+    data = request.get_json() or {}
+    
+    threshold_ms = data.get('threshold_ms', 5000)
+    
+    from incident_playbooks import create_high_latency_playbook
+    playbook = create_high_latency_playbook(threshold_ms)
+    pm.register_playbook(playbook)
+    
+    return jsonify({
+        'message': 'Playbook created from template',
+        'playbook': playbook.to_dict()
+    }), 201

@@ -42,6 +42,7 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Performance Profiler** - Profiling com decorator, context manager, regression detection (v3.7) 🆕
 - **Exporters** - Exportação para Prometheus, Datadog, InfluxDB, Grafana, JSON, CSV (v3.8) 🆕
 - **Metrics Aggregator** - Agregação temporal + detecção de anomalias (v3.9) 🆕
+- **Incident Response Playbooks** - Playbooks automatizados com ações, condições, rate limiting (v3.11) 🆕
 - **Distributed Tracing** - Spans, correlation IDs, export Jaeger/Zipkin (v3.10) 🆕
 
 ## 🚀 Quick Start
