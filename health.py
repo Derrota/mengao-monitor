@@ -2605,6 +2605,10 @@ def playbooks_template_high_latency():
 # ============================================================
 
 from health_check_scheduler import get_scheduler, ScheduleStatus, reset_scheduler
+from maintenance import MaintenanceManager, get_maintenance_manager, MaintenanceTask, MaintenanceTaskType
+
+# Maintenance Manager
+maintenance = MaintenanceManager()
 
 # Inicializa scheduler com callback para health check manager
 def _scheduler_check_callback(check_name: str) -> dict:
@@ -2783,6 +2787,311 @@ def scheduler_history():
         } for r in history],
         'count': len(history)
     })
+
+
+# ============================================
+# Maintenance Endpoints (v3.13)
+# ============================================
+
+@app.route('/maintenance/stats')
+@optional_auth
+def maintenance_stats():
+    """Estatísticas do maintenance manager."""
+    return jsonify(maintenance.get_stats())
+
+
+@app.route('/maintenance/tasks')
+@optional_auth
+def maintenance_tasks():
+    """Lista todas as tarefas de manutenção."""
+    return jsonify({
+        'tasks': maintenance.get_all_tasks(),
+        'count': len(maintenance.get_all_tasks())
+    })
+
+
+@app.route('/maintenance/tasks/<name>')
+@optional_auth
+def maintenance_task_detail(name):
+    """Detalhes de uma tarefa específica."""
+    task = maintenance.get_task(name)
+    if not task:
+        return jsonify({'error': f'Task not found: {name}'}), 404
+    return jsonify(task.to_dict())
+
+
+@app.route('/maintenance/tasks/<name>/run', methods=['POST'])
+@optional_auth
+def maintenance_task_run(name):
+    """Executa uma tarefa manualmente."""
+    result = maintenance.run_task(name)
+    if not result:
+        return jsonify({'error': f'Task not found or disabled: {name}'}), 404
+    return jsonify(result.to_dict())
+
+
+@app.route('/maintenance/tasks/<name>/enable', methods=['POST'])
+@optional_auth
+def maintenance_task_enable(name):
+    """Habilita uma tarefa."""
+    task = maintenance.get_task(name)
+    if not task:
+        return jsonify({'error': f'Task not found: {name}'}), 404
+    task.enabled = True
+    return jsonify({'status': 'enabled', 'task': name})
+
+
+@app.route('/maintenance/tasks/<name>/disable', methods=['POST'])
+@optional_auth
+def maintenance_task_disable(name):
+    """Desabilita uma tarefa."""
+    task = maintenance.get_task(name)
+    if not task:
+        return jsonify({'error': f'Task not found: {name}'}), 404
+    task.enabled = False
+    return jsonify({'status': 'disabled', 'task': name})
+
+
+@app.route('/maintenance/tasks', methods=['POST'])
+@optional_auth
+def maintenance_task_create():
+    """Cria uma nova tarefa de manutenção."""
+    data = request.json
+    if not data or 'name' not in data or 'task_type' not in data:
+        return jsonify({'error': 'name and task_type required'}), 400
+    
+    try:
+        task_type = MaintenanceTaskType(data['task_type'])
+    except ValueError:
+        return jsonify({'error': f'Invalid task_type: {data["task_type"]}'}), 400
+    
+    task = MaintenanceTask(
+        name=data['name'],
+        task_type=task_type,
+        enabled=data.get('enabled', True),
+        interval_seconds=data.get('interval_seconds', 3600),
+        max_age_days=data.get('max_age_days'),
+        max_size_mb=data.get('max_size_mb'),
+        target_path=data.get('target_path'),
+        db_path=data.get('db_path'),
+        table_name=data.get('table_name')
+    )
+    maintenance.add_task(task)
+    return jsonify(task.to_dict()), 201
+
+
+@app.route('/maintenance/tasks/<name>', methods=['DELETE'])
+@optional_auth
+def maintenance_task_delete(name):
+    """Remove uma tarefa."""
+    if maintenance.remove_task(name):
+        return jsonify({'status': 'deleted', 'task': name})
+    return jsonify({'error': f'Task not found: {name}'}), 404
+
+
+@app.route('/maintenance/run-all', methods=['POST'])
+@optional_auth
+def maintenance_run_all():
+    """Executa todas as tarefas pendentes."""
+    results = maintenance.run_all_pending()
+    return jsonify({
+        'results': [r.to_dict() for r in results],
+        'count': len(results)
+    })
+
+
+@app.route('/maintenance/history')
+@optional_auth
+def maintenance_history():
+    """Histórico de execuções de manutenção."""
+    limit = request.args.get('limit', 50, type=int)
+    task_name = request.args.get('task_name')
+    
+    history = maintenance.get_history(task_name=task_name, limit=limit)
+    return jsonify({
+        'history': history,
+        'count': len(history)
+    })
+
+
+@app.route('/maintenance/disk')
+@optional_auth
+def maintenance_disk():
+    """Verifica espaço em disco."""
+    paths = request.args.getlist('path') or ['/']
+    from maintenance import DiskMonitor
+    monitor = DiskMonitor(paths)
+    result = monitor.check()
+    return jsonify(result.to_dict())
+
+
+from backup import BackupManager, BackupConfig, BackupType, get_backup_manager
+
+backup_manager = get_backup_manager()
+
+
+@app.route('/backup/stats')
+@optional_auth
+def backup_stats():
+    """Estatísticas do sistema de backup."""
+    return jsonify(backup_manager.get_stats())
+
+
+@app.route('/backup/configs')
+@optional_auth
+def backup_configs():
+    """Lista configurações de backup."""
+    return jsonify({
+        'configs': backup_manager.get_all_configs(),
+        'count': len(backup_manager._configs)
+    })
+
+
+@app.route('/backup/configs', methods=['POST'])
+@require_auth(scope='admin')
+def backup_add_config():
+    """Adiciona configuração de backup (requer admin)."""
+    data = request.get_json()
+    if not data or 'name' not in data or 'source_path' not in data or 'backup_dir' not in data:
+        return jsonify({'error': 'Missing name, source_path or backup_dir'}), 400
+    
+    backup_type = BackupType.FULL
+    if 'backup_type' in data:
+        try:
+            backup_type = BackupType(data['backup_type'])
+        except ValueError:
+            return jsonify({'error': f'Invalid backup_type: {data["backup_type"]}'}), 400
+    
+    config = BackupConfig(
+        name=data['name'],
+        source_path=data['source_path'],
+        backup_dir=data['backup_dir'],
+        backup_type=backup_type,
+        compress=data.get('compress', True),
+        retention_days=data.get('retention_days', 30),
+        max_backups=data.get('max_backups', 10),
+        verify_after_backup=data.get('verify_after_backup', True),
+        enabled=data.get('enabled', True)
+    )
+    
+    if backup_manager.add_config(config):
+        return jsonify({'message': f'Config added: {data["name"]}', 'config': config.to_dict()}), 201
+    
+    return jsonify({'error': f'Config already exists: {data["name"]}'}), 409
+
+
+@app.route('/backup/configs/<name>', methods=['DELETE'])
+@require_auth(scope='admin')
+def backup_remove_config(name):
+    """Remove configuração de backup (requer admin)."""
+    if backup_manager.remove_config(name):
+        return jsonify({'message': f'Config removed: {name}'})
+    return jsonify({'error': f'Config not found: {name}'}), 404
+
+
+@app.route('/backup/run/<config_name>', methods=['POST'])
+@require_auth(scope='write')
+def backup_run(config_name):
+    """Executa backup para uma configuração específica."""
+    result = backup_manager.backup(config_name)
+    return jsonify(result.to_dict())
+
+
+@app.route('/backup/run-all', methods=['POST'])
+@require_auth(scope='admin')
+def backup_run_all():
+    """Executa backup para todas as configurações (requer admin)."""
+    results = backup_manager.backup_all()
+    return jsonify({
+        'results': [r.to_dict() for r in results],
+        'total': len(results),
+        'successful': sum(1 for r in results if r.status.value in ('completed', 'verified'))
+    })
+
+
+@app.route('/backup/restore', methods=['POST'])
+@require_auth(scope='admin')
+def backup_restore():
+    """Restaura um backup (requer admin)."""
+    data = request.get_json()
+    if not data or 'backup_path' not in data or 'restore_path' not in data:
+        return jsonify({'error': 'Missing backup_path or restore_path'}), 400
+    
+    success, error = backup_manager.restore(
+        backup_path=data['backup_path'],
+        restore_path=data['restore_path'],
+        verify=data.get('verify', True)
+    )
+    
+    if success:
+        return jsonify({'message': 'Backup restored successfully'})
+    return jsonify({'error': error}), 500
+
+
+@app.route('/backup/verify', methods=['POST'])
+@require_auth(scope='write')
+def backup_verify():
+    """Verifica integridade de um backup."""
+    data = request.get_json()
+    if not data or 'backup_path' not in data:
+        return jsonify({'error': 'Missing backup_path'}), 400
+    
+    is_valid, error = backup_manager.verify_backup(data['backup_path'])
+    
+    return jsonify({
+        'backup_path': data['backup_path'],
+        'is_valid': is_valid,
+        'error': error if not is_valid else None
+    })
+
+
+@app.route('/backup/history')
+@optional_auth
+def backup_history():
+    """Histórico de backups."""
+    config_name = request.args.get('config_name')
+    limit = request.args.get('limit', 50, type=int)
+    success_only = request.args.get('success_only', 'false').lower() == 'true'
+    
+    history = backup_manager.get_history(
+        config_name=config_name,
+        limit=limit,
+        success_only=success_only
+    )
+    
+    return jsonify({
+        'history': history,
+        'count': len(history)
+    })
+
+
+@app.route('/backup/list')
+@optional_auth
+def backup_list():
+    """Lista arquivos de backup em um diretório."""
+    backup_dir = request.args.get('backup_dir')
+    config_name = request.args.get('config_name')
+    
+    if not backup_dir:
+        return jsonify({'error': 'Missing backup_dir parameter'}), 400
+    
+    backups = backup_manager.get_backup_list(backup_dir, config_name)
+    
+    return jsonify({
+        'backups': backups,
+        'count': len(backups),
+        'backup_dir': backup_dir
+    })
+
+
+def get_backup_manager_instance():
+    """Retorna instância do backup manager para uso externo."""
+    return backup_manager
+
+
+def get_maintenance_instance():
+    """Retorna instância do maintenance manager para uso externo."""
+    return maintenance
 
 
 def get_scheduler_instance():

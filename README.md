@@ -45,6 +45,8 @@ Mengão Monitor é uma ferramenta de monitoramento de APIs leve e eficiente. Con
 - **Incident Response Playbooks** - Playbooks automatizados com ações, condições, rate limiting (v3.11) 🆕
 - **Distributed Tracing** - Spans, correlation IDs, export Jaeger/Zipkin (v3.10) 🆕
 - **Health Check Scheduler** - Agendamento cron-like para health checks (v3.12) 🆕
+- **Automated Maintenance** - Log rotation, DB cleanup, disk monitoring, cache eviction (v3.13) 🆕
+- **Backup System** - Backup automático SQLite com compressão, verificação e rotação (v3.14) 🆕
 
 ## 🚀 Quick Start
 
@@ -674,6 +676,10 @@ mengao-monitor/
 ├── test_alert_escalation.py # Testes v3.2 (27 test cases) 🆕
 ├── health_check_templates.py # Health Check Templates v3.4 (REST, GraphQL, presets) 🆕
 ├── test_health_check_templates.py # Testes v3.4 (52 test cases) 🆕
+├── maintenance.py         # Automated Maintenance v3.13 (log rotation, DB cleanup, disk monitor) 🆕
+├── test_maintenance.py    # Testes v3.13 (43 test cases) 🆕
+├── backup.py              # Backup System v3.14 (full/incremental, compress, verify) 🆕
+├── test_backup.py         # Testes v3.14 (37 test cases) 🆕
 │   └── example_plugins.py # SSL, SLO, Console, File, JSON, Lifecycle
 ├── requirements.txt     # Dependências
 ├── Dockerfile           # Container
@@ -706,6 +712,10 @@ mengao-monitor/
 - [x] **v3.8**: Exporters (Prometheus, Datadog, InfluxDB, Grafana, JSON, CSV, Webhook) ✅ 🆕
 - [x] **v3.9**: Metrics Aggregator (agregação temporal + detecção de anomalias) ✅ 🆕
 - [x] **v3.10**: Distributed Tracing (spans, correlation IDs, Jaeger export) ✅ 🆕
+- [x] **v3.11**: Incident Response Playbooks (7 ações, 40 testes, 15 endpoints) ✅ 🆕
+- [x] **v3.12**: Health Check Scheduler (cron-like scheduling) ✅ 🆕
+- [x] **v3.13**: Automated Maintenance (log rotation, DB cleanup, disk monitoring) ✅ 🆕
+- [x] **v3.14**: Backup System (full/incremental backup, compression, verification) ✅ 🆕
 
 ### Data Layer (v3.5)
 
@@ -774,6 +784,76 @@ report = graph.calculate_impact("db")
 print(f"Impacto: {report.total_affected} serviços")
 print(f"Severidade: {report.severity}")  # high
 ```
+
+
+### v3.13 — Automated Maintenance System
+
+**Novos módulos:**
+- `maintenance.py`: Sistema de manutenção automatizada
+- `test_maintenance.py`: 43 test cases
+
+**Funcionalidades:**
+- **Log Rotation**: Rotação automática de logs baseada em tamanho e idade
+  - Compressão gzip de logs rotacionados
+  - Limite de arquivos (max_files)
+  - Limpeza automática de logs antigos
+- **Database Cleanup**: Limpeza automática de dados antigos em SQLite
+  - Remoção em batches para evitar lock prolongado
+  - VACUUM automático para recuperar espaço
+  - Estatísticas por tabela
+- **Disk Monitor**: Monitoramento de espaço em disco
+  - Alertas por threshold (warning/critical)
+  - Suporte a múltiplos paths
+- **Cache Eviction**: Limpeza automática de caches internos
+  - Baseado em tamanho máximo
+  - Integrável com qualquer cache object
+- **Maintenance Manager**: Gerenciador central com worker thread
+  - Singleton pattern
+  - Histórico de execuções
+  - Stats detalhadas (bytes freed, success rate)
+  - Tasks habilitáveis/desabilitáveis
+
+**Endpoints:**
+
+| Endpoint | Método | Descrição |
+|----------|--------|-----------|
+| `/maintenance/stats` | GET | Estatísticas globais |
+| `/maintenance/tasks` | GET | Lista todas as tarefas |
+| `/maintenance/tasks` | POST | Cria nova tarefa |
+| `/maintenance/tasks/<name>` | GET | Detalhe de tarefa |
+| `/maintenance/tasks/<name>` | DELETE | Remove tarefa |
+| `/maintenance/tasks/<name>/run` | POST | Executa tarefa manualmente |
+| `/maintenance/tasks/<name>/enable` | POST | Habilita tarefa |
+| `/maintenance/tasks/<name>/disable` | POST | Desabilita tarefa |
+| `/maintenance/run-all` | POST | Executa todas pendentes |
+| `/maintenance/history` | GET | Histórico de execuções |
+| `/maintenance/disk` | GET | Verifica espaço em disco |
+
+**Uso programático:**
+
+```python
+from maintenance import MaintenanceManager
+
+# Setup
+mm = MaintenanceManager()
+mm.setup_log_rotation("/var/log/app", max_size_mb=10, max_age_days=7)
+mm.setup_db_cleanup("monitor.db", [
+    ("health_checks", "timestamp", 30),
+    ("alerts", "timestamp", 90)
+])
+mm.setup_disk_monitor(["/", "/var"], warning_threshold=80)
+mm.setup_cache_eviction({"my_cache": {"cache_obj": cache, "max_size": 1000}})
+
+# Worker automático
+mm.start()
+
+# Ou execução manual
+results = mm.run_all_pending()
+for r in results:
+    print(f"{r.task_name}: {r.status.value} ({r.items_removed} removed)")
+```
+
+**Testes:** 43 test cases cobrindo LogRotator, DatabaseCleaner, DiskMonitor, CacheEvictor, MaintenanceManager e edge cases.
 
 ## 🤝 Contribuindo
 
@@ -2023,20 +2103,108 @@ curl http://localhost:8080/scheduler/history?limit=50
 
 **Testes:** 30 test cases cobrindo cron expressions, scheduler, callbacks, histórico e edge cases.
 
-## 🤝 Contribuindo
 
-1. Fork o projeto
-2. Crie sua feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit suas mudanças (`git commit -m 'Add AmazingFeature'`)
-4. Push para a branch (`git push origin feature/AmazingFeature`)
-5. Abra um Pull Request
 
-## 📜 Licença
+## 💾 Backup System (v3.14) 🆕
 
-MIT License - veja [LICENSE](LICENSE) para detalhes.
+Sistema de backup automático para SQLite com compressão, verificação de integridade e rotação automática.
 
-## 🦞 Sobre
+**Features:**
+- **Backup full**: Cópia completa do banco SQLite
+- **Compressão gzip**: Reduz tamanho em até 90%
+- **Verificação de integridade**: PRAGMA integrity_check + checksum SHA256
+- **Rotação automática**: Remove backups antigos por idade e quantidade
+- **Histórico completo**: Tracking de todos os backups executados
+- **Restore**: Restauração com verificação automática
+- **Thread-safe**: Singleton pattern com RLock
+- **Zero dependências**: Apenas stdlib
 
-Criado com ❤️ e paixão rubro-negra por [Lek](https://github.com/Derrota).
+**Endpoints:**
 
-**Uma vez Flamengo, sempre Flamengo!** 🔴⚫
+| Endpoint | Método | Descrição |
+|----------|--------|-----------|
+| `/backup/stats` | GET | Estatísticas globais |
+| `/backup/configs` | GET | Lista configurações |
+| `/backup/configs` | POST | Adiciona configuração (admin) |
+| `/backup/configs/<name>` | DELETE | Remove configuração (admin) |
+| `/backup/run/<config>` | POST | Executa backup |
+| `/backup/run-all` | POST | Executa todos backups (admin) |
+| `/backup/restore` | POST | Restaura backup (admin) |
+| `/backup/verify` | POST | Verifica integridade |
+| `/backup/history` | GET | Histórico de backups |
+| `/backup/list` | GET | Lista arquivos de backup |
+
+**Uso programático:**
+
+```python
+from backup import BackupManager, BackupConfig, BackupType
+
+manager = BackupManager()
+
+# Configurar backup
+config = BackupConfig(
+    name="monitor_db",
+    source_path="mengao_monitor.db",
+    backup_dir="/var/backups/mengao",
+    backup_type=BackupType.FULL,
+    compress=True,
+    retention_days=30,
+    max_backups=10,
+    verify_after_backup=True
+)
+
+manager.add_config(config)
+
+# Executar backup
+result = manager.backup("monitor_db")
+print(f"Status: {result.status.value}")
+print(f"Size: {result.backup_size_bytes} bytes")
+print(f"Compression: {result.compression_ratio:.1%}")
+
+# Restaurar backup
+success, error = manager.restore(
+    backup_path=result.backup_path,
+    restore_path="restored.db"
+)
+
+# Verificar backup
+is_valid, error = manager.verify_backup(result.backup_path)
+```
+
+**Configuração:**
+```json
+{
+  "backup": {
+    "configs": [
+      {
+        "name": "monitor_db",
+        "source_path": "mengao_monitor.db",
+        "backup_dir": "/var/backups/mengao",
+        "backup_type": "full",
+        "compress": true,
+        "retention_days": 30,
+        "max_backups": 10,
+        "verify_after_backup": true,
+        "enabled": true
+      }
+    ]
+  }
+}
+```
+
+**Tipos de backup:**
+- `full`: Backup completo do banco
+- `incremental`: Apenas mudanças desde último backup (futuro)
+- `snapshot`: Snapshot rápido (cópia direta)
+
+**Política de retenção:**
+- `retention_days`: Remove backups mais antigos que N dias
+- `max_backups`: Mantém apenas os N backups mais recentes
+- Ambas políticas são aplicadas automaticamente após cada backup
+
+**Verificação de integridade:**
+- PRAGMA integrity_check do SQLite
+- Checksum SHA256 do arquivo de backup
+- Verificação pós-descompressão (se comprimido)
+
+**Testes:** 37 test cases cobrindo backup, restore, compressão, verificação, rotação, histórico e edge cases.
