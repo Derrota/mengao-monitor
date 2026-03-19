@@ -855,7 +855,62 @@ for r in results:
 
 **Testes:** 43 test cases cobrindo LogRotator, DatabaseCleaner, DiskMonitor, CacheEvictor, MaintenanceManager e edge cases.
 
-## 🤝 Contribuindo
+## 🖥️ CLI (v3.15) 🆕
+
+Interface unificada para gerenciar o Mengão Monitor sem precisar de `curl`:
+
+```bash
+# Status do monitor
+python3 monitor_cli.py status
+
+# Listar APIs monitoradas
+python3 monitor_cli.py apis
+
+# Health check específico
+python3 monitor_cli.py check my-api
+
+# Backup
+python3 monitor_cli.py backup create
+python3 monitor_cli.py backup list
+python3 monitor_cli.py backup restore backup_20260318.db.gz
+
+# Maintenance
+python3 monitor_cli.py maintenance run
+python3 monitor_cli.py maintenance status
+
+# Scheduler
+python3 monitor_cli.py scheduler list
+python3 monitor_cli.py scheduler stats
+
+# SLA Reports
+python3 monitor_cli.py sla report
+python3 monitor_cli.py sla report my-api
+python3 monitor_cli.py sla incidents
+
+# Dependency Graph
+python3 monitor_cli.py graph impact my-api
+python3 monitor_cli.py graph cycles
+python3 monitor_cli.py graph critical
+
+# Alerts, Metrics, WebSocket
+python3 monitor_cli.py alerts
+python3 monitor_cli.py metrics
+python3 monitor_cli.py websocket
+
+# Configuração
+python3 monitor_cli.py config set-host http://meu-host:5000
+python3 monitor_cli.py config set-token mm_seu_token
+python3 monitor_cli.py config show
+```
+
+**Features:**
+- **Zero dependências** — apenas stdlib Python (urllib, json, argparse)
+- **13 comandos** — status, apis, check, backup, maintenance, scheduler, sla, graph, alerts, dashboard, metrics, websocket, config
+- **Output colorido** — ANSI colors para status (green/yellow/red)
+- **Tabelas formatadas** — visualização limpa sem dependências externas
+- **Config persistente** — host/token salvos em `cli_config.json`
+- **55 testes** — cobertura completa de commands, formatters, HTTP client
+
 
 1. Fork o projeto
 2. Crie sua feature branch (`git checkout -b feature/AmazingFeature`)
@@ -2208,3 +2263,10 @@ is_valid, error = manager.verify_backup(result.backup_path)
 - Verificação pós-descompressão (se comprimido)
 
 **Testes:** 37 test cases cobrindo backup, restore, compressão, verificação, rotação, histórico e edge cases.
+## 🤝 Contribuindo
+
+1. Fork o projeto
+2. Crie sua feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit suas mudanças (`git commit -m 'Add AmazingFeature'`)
+4. Push para a branch (`git push origin feature/AmazingFeature`)
+5. Abra um Pull Request
