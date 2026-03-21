@@ -28,6 +28,7 @@ from websocket_server import (
     get_websocket_server, start_websocket_server, stop_websocket_server,
     broadcast_status_update, broadcast_metrics_update, broadcast_alert
 )
+from maintenance import get_maintenance_manager, MaintenanceConfig
 
 
 class MengaoMonitor:
@@ -64,6 +65,10 @@ class MengaoMonitor:
             if self.email_alerter.enabled:
                 self.logger.info(f"📧 Email alerts enabled → {', '.join(config.email.to_emails)}")
         
+        # Start maintenance system
+        self.maintenance_manager.start()
+        self.logger.info("🔧 Maintenance system started (log rotation, DB cleanup, cache eviction, disk monitoring)")
+        
         # State
         self.running = False
         self.start_time = time.time()
@@ -72,6 +77,9 @@ class MengaoMonitor:
         
         # Previous status for change detection
         self.previous_status: dict = {}
+        
+        # Maintenance system (v3.13)
+        self.maintenance_manager = get_maintenance_manager()
 
     def check_endpoint(self, endpoint_config) -> dict:
         """
@@ -263,6 +271,9 @@ class MengaoMonitor:
         def shutdown(signum, frame):
             self.logger.info("Shutdown signal received")
             self.running = False
+            # Stop maintenance system
+            self.maintenance_manager.stop()
+            self.logger.info("🔧 Maintenance system stopped")
         
         signal.signal(signal.SIGINT, shutdown)
         signal.signal(signal.SIGTERM, shutdown)

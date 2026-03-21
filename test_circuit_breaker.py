@@ -374,7 +374,7 @@ class TestIntegration:
         """Testa workflow completo: closed → open → half-open → closed."""
         config = CircuitBreakerConfig(
             failure_threshold=3,
-            recovery_timeout=0,
+            recovery_timeout=60,  # 60 segundos, não zero
             success_threshold=2,
         )
         cb = CircuitBreaker("API Test", config)
@@ -390,11 +390,13 @@ class TestIntegration:
             cb.record_failure()
         assert cb.state == CircuitState.OPEN
         
-        # OPEN: requests rejeitados
+        # OPEN: primeiros requests são rejeitados
         assert cb.can_execute() is False
+        assert cb.state == CircuitState.OPEN  # ainda OPEN
         
-        # Após timeout → HALF_OPEN
-        cb.can_execute()
+        # Simular passagem do tempo (forçar _should_attempt_reset)
+        cb.stats.last_state_change = time.time() - 61  # 61 segundos atrás
+        assert cb.can_execute() is True  # Agora transiciona para HALF_OPEN
         assert cb.state == CircuitState.HALF_OPEN
         
         # 2 sucessos → CLOSED
