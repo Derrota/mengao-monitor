@@ -48,6 +48,32 @@ class Incident:
     resolved: bool = False
 
 
+@dataclass
+class SLAWindow:
+    """Métrica de SLA em uma janela temporal."""
+    window_start: str
+    window_end: str
+    total_checks: int = 0
+    successful_checks: int = 0
+    failed_checks: int = 0
+    uptime_percent: float = 100.0
+    avg_response_time_ms: float = 0.0
+    p95_response_time_ms: float = 0.0
+
+
+@dataclass
+class DegradationAlert:
+    """Alerta de tendência de degradação de SLA."""
+    endpoint_name: str
+    severity: str
+    reason: str
+    previous_uptime_percent: float
+    current_uptime_percent: float
+    previous_p95_ms: float
+    current_p95_ms: float
+    detected_at: str
+
+
 class SLAReporter:
     """Gerador de relatórios de SLA."""
     
@@ -225,6 +251,14 @@ class SLAReporter:
     def export_json(self, report: SLAMetrics) -> str:
         """Exporta relatório como JSON."""
         return json.dumps(asdict(report), indent=2, ensure_ascii=False)
+    
+    def export_windows_json(self, windows: List[SLAWindow]) -> str:
+        """Exporta janelas móveis como JSON."""
+        return json.dumps([asdict(w) for w in windows], indent=2, ensure_ascii=False)
+    
+    def export_alerts_json(self, alerts: List[DegradationAlert]) -> str:
+        """Exporta alertas de degradação como JSON."""
+        return json.dumps([asdict(a) for a in alerts], indent=2, ensure_ascii=False)
     
     def export_csv(self, report: SLAMetrics) -> str:
         """Exporta relatório como CSV."""
@@ -456,6 +490,148 @@ class SLAReporter:
                 breach_count += 1
         
         return breach_count
+    
+    def _parse_check_time(self, check: Dict) -> Optional[datetime]:
+        """Normaliza timestamp de checks vindos de fontes diferentes."""
+        timestamp = (
+            check.get("timestamp")
+            or check.get("checked_at")
+            or check.get("time")
+            or check.get("created_at")
+        )
+        if not timestamp:
+            return None
+        try:
+            return datetime.fromisoformat(str(timestamp).replace("Z", ""))
+        except (ValueError, TypeError):
+            return None
+    
+    def _check_success(self, check: Dict) -> bool:
+        """Normaliza status de sucesso."""
+        return check.get("status") == "success" or bool(check.get("up", False))
+    
+    def _calculate_window_metrics(self, checks: List[Dict], sla_target: float) -> SLAWindow:
+        """Calcula métricas de uma janela isolada."""
+        total = len(checks)
+        successful = sum(1 for c in checks if self._check_success(c))
+        failed = total - successful
+        uptime = (successful / total * 100) if total > 0 else 100.0
+        
+        response_times = [
+            c.get("response_time_ms", c.get("response_time", 0))
+            for c in checks
+            if c.get("response_time_ms") or c.get("response_time")
+        ]
+        response_times.sort()
+        
+        if not response_times:
+            avg_rt = p95_rt = 0.0
+        else:
+            avg_rt = sum(response_times) / len(response_times)
+            p95_idx = min(len(response_times) - 1, int(len(response_times) * 0.95))
+            p95_rt = response_times[p95_idx]
+        
+        return SLAWindow(
+            window_start="",
+            window_end="",
+            total_checks=total,
+            successful_checks=successful,
+            failed_checks=failed,
+            uptime_percent=round(uptime, 4),
+            avg_response_time_ms=round(avg_rt, 2),
+            p95_response_time_ms=round(p95_rt, 2)
+        )
+    
+    def generate_moving_windows(
+        self,
+        checks_data: List[Dict],
+        window_minutes: int = 60,
+        step_minutes: int = 15
+    ) -> List[SLAWindow]:
+        """Gera janelas móveis de SLA para análise de tendência.
+        
+        Útil para detectar degradação antes do SLA diário explodir.
+        Exemplo: janela de 60 minutos avançando de 15 em 15 minutos.
+        """
+        if not checks_data:
+            return []
+        
+        timestamps = [self._parse_check_time(c) for c in checks_data]
+        timestamps = [t for t in timestamps if t is not None]
+        if not timestamps:
+            return []
+        
+        start = min(timestamps)
+        end = max(timestamps)
+        window = timedelta(minutes=window_minutes)
+        step = timedelta(minutes=step_minutes)
+        
+        windows: List[SLAWindow] = []
+        cursor = start
+        while cursor <= end:
+            window_end = cursor + window
+            window_checks = [
+                c for c in checks_data
+                if (parsed := self._parse_check_time(c)) and cursor <= parsed < window_end
+            ]
+            metrics = self._calculate_window_metrics(window_checks, self._default_sla_target)
+            metrics.window_start = cursor.isoformat() + "Z"
+            metrics.window_end = window_end.isoformat() + "Z"
+            windows.append(metrics)
+            cursor += step
+        
+        return windows
+    
+    def detect_degradation(
+        self,
+        checks_data: List[Dict],
+        window_minutes: int = 60,
+        step_minutes: int = 15,
+        uptime_drop_threshold: float = 2.0,
+        p95_increase_percent: float = 25.0,
+        min_windows: int = 2
+    ) -> List[DegradationAlert]:
+        """Detecta tendência de degradação comparando janelas móveis consecutivas."""
+        windows = self.generate_moving_windows(checks_data, window_minutes, step_minutes)
+        if len(windows) < min_windows:
+            return []
+        
+        alerts: List[DegradationAlert] = []
+        previous = windows[0]
+        
+        for current in windows[1:]:
+            uptime_drop = previous.uptime_percent - current.uptime_percent
+            p95_increase = (
+                ((current.p95_response_time_ms - previous.p95_response_time_ms)
+                 / previous.p95_response_time_ms * 100)
+                if previous.p95_response_time_ms > 0 else 0
+            )
+            
+            reasons = []
+            severity = "WARN"
+            
+            if uptime_drop >= uptime_drop_threshold:
+                reasons.append(f"uptime caiu {uptime_drop:.2f} pontos percentuais")
+                severity = "CRITICAL" if current.uptime_percent < 99.0 else severity
+            
+            if p95_increase >= p95_increase_percent:
+                reasons.append(f"p95 subiu {p95_increase:.1f}%")
+            
+            if reasons:
+                alerts.append(DegradationAlert(
+                    endpoint_name="",
+                    severity=severity,
+                    reason="; ".join(reasons),
+                    previous_uptime_percent=previous.uptime_percent,
+                    current_uptime_percent=current.uptime_percent,
+                    previous_p95_ms=previous.p95_response_time_ms,
+                    current_p95_ms=current.p95_response_time_ms,
+                    detected_at=datetime.utcnow().isoformat() + "Z"
+                ))
+            
+            previous = current
+        
+        return alerts
     
     def get_stats(self) -> Dict:
         """Retorna estatísticas do reporter."""
